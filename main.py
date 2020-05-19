@@ -342,7 +342,7 @@ for epoch in range(start_epoch + 1, conf.num_epochs):
 
     if epoch == start_epoch + 1 or (epoch % 5 == 0 and epoch < start_epoch + conf.num_epochs - 1):
         # evaluate only once in every 5 epochs since it's time consuming and evaluation is noisy
-        for loader, name in list(zip([test_loader_zs, test_loader], ['val_zs', 'val_all_large'])):
+        for loader, name in list(zip([val_loader_zs, val_loader], ['val_zs', 'val_all_large'])):
             val_epoch(loader, name)
 
     detector.global_batch_iter += 1  # to increase the counter for wandb

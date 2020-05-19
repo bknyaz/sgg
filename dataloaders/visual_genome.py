@@ -377,13 +377,11 @@ class VG(Dataset):
         if self.mrcnn:
             assert box_scale_factor == 1, box_scale_factor
 
-        # Boxes are already at BOX_SCALE
-        if self.is_train:
-            # crop boxes that are too large. This seems to be only a problem for image heights, but whatevs
-            gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]].clip(
-                None, box_scale / max(image_unpadded.size) * image_unpadded.size[1])
-            gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]].clip(
-                None, box_scale / max(image_unpadded.size) * image_unpadded.size[0])
+        # crop boxes that are too large. This seems to be only a problem for image heights, but whatevs
+        gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]].clip(
+            None, box_scale / max(image_unpadded.size) * image_unpadded.size[1])
+        gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]].clip(
+            None, box_scale / max(image_unpadded.size) * image_unpadded.size[0])
 
 
         if VG.split in ['vte', 'gqa']:

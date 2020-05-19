@@ -42,16 +42,24 @@ class UnionBoxesAndFeats(Module):
     def forward(self, union_pools, rois, union_inds, im_sizes):
 
         boxes = rois[:, 1:].clone()
-        multiplier = boxes.new(boxes.shape).fill_(0)
+
+        # scale boxes to the range [0,1]
+        scale = boxes.new(boxes.shape).fill_(0)
         for i, s, e in enumerate_by_image(rois[:, 0].long().data):
             h, w = im_sizes[i][:2]
-            multiplier[s:e, 0] = w
-            multiplier[s:e, 1] = h
-            multiplier[s:e, 2] = w
-            multiplier[s:e, 3] = h
-        boxes = boxes / multiplier
+            scale[s:e, 0] = w
+            scale[s:e, 1] = h
+            scale[s:e, 2] = w
+            scale[s:e, 3] = h
+        boxes = boxes / scale
 
-        rects = draw_union_boxes_my(boxes, union_inds, self.pooling_size * 4 - 1) - 0.5
+        try:
+            rects = draw_union_boxes_my(boxes, union_inds, self.pooling_size * 4 - 1) - 0.5
+        except Exception as e:
+            # there was a problem with bboxes being larger than images at test time, had to clip them
+            print(rois, boxes, im_sizes, scale)
+            raise
+
         if self.concat:
             return torch.cat((union_pools, self.conv(rects)), 1)
         return union_pools + self.conv(rects)
@@ -66,7 +74,7 @@ def draw_union_boxes_my(boxes, union_inds, sz):
     :param sz:
     :return:
     """
-    assert boxes.max() <= 1.1, boxes.max()
+    assert boxes.max() <= 1.001, boxes.max()
     boxes_grid = F.grid_sample(boxes.new(len(boxes), 1, sz, sz).fill_(1), _boxes_to_grid(boxes, sz, sz))
     out = boxes_grid[union_inds.reshape(-1)].reshape(len(union_inds), 2, sz, sz)
     return out
