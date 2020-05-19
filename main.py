@@ -11,6 +11,7 @@ from dataloaders.visual_genome import VGDataLoader, VG
 conf = ModelConfig()
 VG.split = conf.split  # set VG, GQA or VTE split here to use as a global variable
 
+import numpy as np
 import pandas as pd
 import time
 from tqdm import tqdm
@@ -305,7 +306,7 @@ def val_epoch(loader, name, n_batches=-1, is_test=False):
             eval_no_gc = evaluator[eval_m + '_nogc'].result_dict
             results_dict = {}
             for eval_, mean_eval, sfx in zip([eval_gc, eval_no_gc], [mean_recall, mean_recall_mp], ['GC', 'NOGC']):
-                for k, v in eval_gc[eval_m + '_recall'].items():
+                for k, v in eval_[eval_m + '_recall'].items():
                     all_metrics.append(np.mean(v))
                     results_dict['%s/%s_R@%i_%s' % (eval_m, name, k, sfx)] = np.mean(v)
                 if mean_eval:
