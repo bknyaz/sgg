@@ -30,6 +30,7 @@ data_path
 └───GQA
 │   │   sceneGraphs
 |   |   ...
+```
 
 
 **This repository is in progress, use at your own risk.**
