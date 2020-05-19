@@ -204,7 +204,7 @@ class ModelConfig(object):
         parser.add_argument('-wandb', dest='wandb', type=str, default=None,
                             help='the name of the weights and biases project (empty to avoid wandb)')
         parser.add_argument('-wandb_dir', dest='wandb_dir',
-                            help='directory for wandb logging (can take a lot of space)', type=str, default='./wandb')
+                            help='directory for wandb logging (can take a lot of space)', type=str, default='./')
         parser.add_argument('-name', dest='name', help='name of the experiment', type=str, default=None)
         parser.add_argument('-debug', dest='debug', action='store_true')
 

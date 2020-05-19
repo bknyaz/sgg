@@ -259,7 +259,7 @@ def val_epoch(loader, name, n_batches=-1, is_test=False):
             evaluator[eval_m] = BasicSceneGraphEvaluator(eval_m)  # graph constrained evaluator
             evaluator[eval_m + '_nogc'] = BasicSceneGraphEvaluator(eval_m, multiple_preds=True,    # graph unconstrained evaluator
                                                                    per_triplet=name not in ['val_zs', 'test_zs'],
-                                                                   triplet_counts=triplet_counts,
+                                                                   triplet_counts=train.triplet_counts,
                                                                    triplet2str=train_loader.dataset.triplet2str)
 
             # for calculating recall of each relationship except no relationship
@@ -343,7 +343,7 @@ for epoch in range(start_epoch + 1, conf.num_epochs):
     if epoch == start_epoch + 1 or (epoch % 5 == 0 and epoch < start_epoch + conf.num_epochs - 1):
         # evaluate only once in every 5 epochs since it's time consuming and evaluation is noisy
         for loader, name in list(zip([test_loader_zs, test_loader], ['val_zs', 'val_all_large'])):
-            val_epoch(loader, name, n_batches=10)
+            val_epoch(loader, name)
 
     detector.global_batch_iter += 1  # to increase the counter for wandb
 
@@ -356,7 +356,7 @@ for epoch in range(start_epoch + 1, conf.num_epochs):
 if not conf.notest:
     all_pred_entries = {}
     for loader, name in list(zip([test_loader_zs, test_loader], ['test_zs', 'test_all_large'])):
-        all_pred_entries[name] = val_epoch(loader, name, n_batches=10, is_test=True)
+        all_pred_entries[name] = val_epoch(loader, name, is_test=True)
 
     if conf.nosave or len(conf.save_dir) == 0:
         print('saving test predictions is ommitted due to the nosave argument or save_dir not specified', conf.save_dir)

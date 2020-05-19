@@ -66,8 +66,8 @@ def draw_union_boxes_my(boxes, union_inds, sz):
     :param sz:
     :return:
     """
-    assert boxes.max() <= 1 + 1e-3, boxes.max()
-    boxes_grid = F.grid_sample(torch.ones(len(boxes), 1, sz, sz), _boxes_to_grid(boxes, sz, sz))
+    assert boxes.max() <= 1.1, boxes.max()
+    boxes_grid = F.grid_sample(boxes.new(len(boxes), 1, sz, sz).fill_(1), _boxes_to_grid(boxes, sz, sz))
     out = boxes_grid[union_inds.reshape(-1)].reshape(len(union_inds), 2, sz, sz)
     return out
 

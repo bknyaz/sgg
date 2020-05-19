@@ -152,14 +152,17 @@ class RelModelStanford(RelModelBase):
         with torch.no_grad():  # do not update anything in the detector
 
             targets, x_lst, original_image_sizes = [], [], []
+            device = self.rel_fc.weight.get_device() if self.rel_fc.weight.is_cuda else 'cpu'
+            gt_boxes = gt_boxes.to(device)
+            gt_classes = gt_classes.to(device)
+            gt_rels = gt_rels.to(device)
             for i, s, e in enumerate_by_image(gt_classes[:, 0].long().data):
-                targets.append({ 'boxes': copy.deepcopy(gt_boxes[s:e]), 'labels': gt_classes[s:e, 1].long() })
-                x_lst.append(x[i].to(gt_classes.get_device() if gt_classes.is_cuda else 'cpu').squeeze())
+                targets.append({ 'boxes': copy.deepcopy(gt_boxes[s:e]), 'labels': gt_classes[s:e, 1].long().to(device) })
+                x_lst.append(x[i].to(device).squeeze())
                 original_image_sizes.append(x[i].shape[-2:])
 
             images, targets = self.detector.transform(x_lst, targets)
             fmap_multiscale = self.detector.backbone(images.tensors)
-
             if self.mode != 'sgdet':
                 rois, obj_labels, bbox_targets, rpn_scores, rpn_box_deltas, rel_labels = \
                     self.gt_boxes(None, im_sizes, image_offset, self.RELS_PER_IMG, gt_boxes,
@@ -197,7 +200,7 @@ class RelModelStanford(RelModelBase):
                     rm_box_priors_org.append(boxes_all_dict[i]['boxes'])
                     obj_labels.append(boxes_all_dict[i]['labels'])
                     im_inds.append(torch.zeros(len(detections[i]['boxes']),
-                                               device=gt_classes.get_device() if gt_classes.is_cuda else 'cpu').float() + i)
+                                               device=device).float() + i)
                 im_inds = torch.cat(im_inds).view(-1, 1)
 
                 result = Result(
