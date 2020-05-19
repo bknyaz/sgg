@@ -17,7 +17,19 @@ It should be possible to reproduce our GQA results using this code.
 
 **This code does not require building or downloading anything in advance**. Training the Scene Graph Classification (SGCls) model is as easy as running this command:
 
-`python main.py -data /path/to/VG`
+`python main.py -data data_path`
+
+The script will download all data and create the following directories:
+
+```
+data_path
+│   VG
+│   │   VG_100K
+│   │   ...
+│
+└───GQA
+│   │   sceneGraphs
+|   |   ...
 
 
 **This repository is in progress, use at your own risk.**
@@ -25,7 +37,7 @@ It should be possible to reproduce our GQA results using this code.
 ## TODO
 
 - [x] Message Passing with Mask R-CNN
-- [ ] Automatically download all files required to run the code
+- [x] Automatically download all files required to run the code
 - [ ] Obtain results on VG
 - [ ] Obtain results on GQA
 - [ ] Add the script to visualize scene graph generation used in the paper

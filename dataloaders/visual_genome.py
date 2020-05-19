@@ -66,10 +66,11 @@ class VG(Dataset):
             assert mode in ['val', 'test'], mode
 
         if VG.split == 'stanford':
-            self.roidb_file = os.path.join(data_dir, 'stanford_filtered', 'VG-SGG.h5')
-            self.dict_file = os.path.join(data_dir, 'stanford_filtered', 'VG-SGG-dicts.json')
-            self.image_file = os.path.join(data_dir, 'stanford_filtered', 'image_data.json')
-            self.images_dir = os.path.join(data_dir, 'VG_100K')
+            data_name = 'VG'
+            self.roidb_file = os.path.join(data_dir, data_name, 'stanford_filtered', 'VG-SGG.h5')
+            self.dict_file = os.path.join(data_dir, data_name, 'stanford_filtered', 'VG-SGG-dicts.json')
+            self.image_file = os.path.join(data_dir, data_name, 'stanford_filtered', 'image_data.json')
+            self.images_dir = os.path.join(data_dir, data_name, 'VG_100K')
             self.split_mask, self.gt_boxes, self.gt_classes, self.relationships = load_graphs(
                 self.roidb_file, self.mode, num_im, num_val_im=num_val_im,
                 filter_empty_rels=filter_empty_rels,
@@ -81,8 +82,9 @@ class VG(Dataset):
                 filter_zeroshots=True
             )
         elif VG.split == 'vte':
-            self.images_dir = os.path.join(data_dir, 'VG_100K')
-            vte = VTESplit(os.path.join(data_dir, 'vtranse', 'vg1_2_meta.h5'), mode=self.mode)
+            data_name = 'VG'
+            self.images_dir = os.path.join(data_dir, data_name, 'VG_100K')
+            vte = VTESplit(os.path.join(data_dir, data_name, 'vtranse', 'vg1_2_meta.h5'), mode=self.mode)
             self.split_mask, self.gt_boxes, self.gt_classes, self.relationships = vte.load_graphs(
                 num_im,
                 num_val_im=num_val_im,
@@ -95,7 +97,8 @@ class VG(Dataset):
             )
 
         elif VG.split == 'gqa':
-            self.images_dir = os.path.join(data_dir, '../VG/VG_100K')
+            data_name = 'GQA'
+            self.images_dir = os.path.join(data_dir, 'VG/VG_100K')
             # Load the JSON containing the SGs
             f_mode = mode
             if mode == 'val':
@@ -103,7 +106,7 @@ class VG(Dataset):
             elif mode == 'test':
                 f_mode = 'val'  # GQA has no public test SGs, so use the val set instead
 
-            img_list_file = data_dir + '/%s_images.json' % f_mode
+            img_list_file = os.path.join(data_dir, data_name, '%s_images.json' % f_mode)
 
             if os.path.isfile(img_list_file):
                 print('Loading GQA-%s image ids...' % mode)
@@ -112,7 +115,7 @@ class VG(Dataset):
             else:
                 # Use only images having question-answer pairs in the balanced split
                 print('Loading GQA-%s questions...' % mode)
-                with open(data_dir + '/%s_balanced_questions.json' % f_mode, 'rb') as f:
+                with open(os.path.join(data_dir, data_name, '%s_balanced_questions.json' % f_mode), 'rb') as f:
                     Q_dict = json.load(f)
                 self.image_ids = set()
                 for v in Q_dict.values():
@@ -128,9 +131,9 @@ class VG(Dataset):
 
             if VG.train_sgs is None:
                 print('Loading GQA-%s scene graphs...' % mode)
-                with open(data_dir + '/sceneGraphs/train_sceneGraphs.json', 'rb') as f:
+                with open(os.path.join(data_dir, data_name, 'sceneGraphs/train_sceneGraphs.json'), 'rb') as f:
                     VG.train_sgs = json.load(f)
-                with open(data_dir + '/sceneGraphs/val_sceneGraphs.json', 'rb') as f:
+                with open(os.path.join(data_dir, data_name, 'sceneGraphs/val_sceneGraphs.json'), 'rb') as f:
                     VG.val_sgs = json.load(f)
             train_sgs, val_sgs = VG.train_sgs, VG.val_sgs
 
@@ -162,7 +165,7 @@ class VG(Dataset):
             self.filenames = load_image_filenames(self.image_file, self.images_dir) if VG.filenames is None else VG.filenames
             self.ind_to_classes, self.ind_to_predicates = load_info(self.dict_file)
         elif VG.split == 'vte':
-            self.filenames = vte.load_image_filenames(os.path.join(data_dir, 'VG_100K'))
+            self.filenames = vte.load_image_filenames(self.images_dir)
             self.ind_to_classes, self.ind_to_predicates = vte.load_info()
             vte.close()
 
@@ -349,7 +352,6 @@ class VG(Dataset):
         blob.reduce()
         return blob
 
-    # @profile
     def __getitem__(self, index):
         image_unpadded = Image.open(os.path.join(self.images_dir, self.filenames[index])).convert('RGB')
 

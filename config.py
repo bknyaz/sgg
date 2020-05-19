@@ -8,7 +8,7 @@ import subprocess
 import torch
 import random
 import platform
-
+from lib.download import download_all_data
 
 # Decide which pytorch version is available
 try:
@@ -90,10 +90,6 @@ class ModelConfig(object):
         if self.split == 'gqa':
             assert self.rels_per_img == 1024, '1024 rels should be used for GQA'
 
-
-        if not os.path.exists(self.data):
-            raise ValueError('VG or GQA data not found', self.data)
-
         if self.split != 'stanford':
             assert self.detector == 'mrcnn', (
                 'Do not use VG pretrained detector on other splits since the train set might overlap with the test set')
@@ -114,6 +110,14 @@ class ModelConfig(object):
         torch.manual_seed(self.seed)
         torch.cuda.manual_seed(self.seed)
         torch.cuda.manual_seed_all(self.seed)
+
+        if not os.path.exists(self.data):
+            if len(self.data) == 0:
+                raise ValueError("data must be a valid path")
+            os.mkdir(self.data)
+
+        if not self.data_exists():
+            download_all_data(self.data)
 
 
         # Weights and Biases (WANDB) logging tool (optional)
@@ -146,6 +150,12 @@ class ModelConfig(object):
             self.wandb_log = None
 
 
+    def data_exists(self):
+        return os.path.exists(os.path.join(self.data, 'VG', 'VG_100K')) and \
+               os.path.exists(os.path.join(self.data, 'VG', 'stanford_filtered')) and \
+               os.path.exists(os.path.join(self.data, 'GQA', 'train_balanced_questions.json'))
+
+
     def setup_parser(self):
         """
         Sets up an argument parser
@@ -153,7 +163,7 @@ class ModelConfig(object):
         """
         parser = ArgumentParser(description='training code')
 
-        parser.add_argument('-data', dest='data', help='path to load Visual Genome from', type=str, default='./data')
+        parser.add_argument('-data', dest='data', help='path where Visual Genome and GQA are located', type=str, default='./data')
         parser.add_argument('-split', dest='split', type=str, default='stanford', choices=['stanford', 'vte', 'gqa'])
 
         parser.add_argument('-ckpt', dest='ckpt', help='Filename to load from', type=str, default='')
