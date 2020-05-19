@@ -42,3 +42,17 @@ data_path
 - [ ] Obtain results on VG
 - [ ] Obtain results on GQA
 - [ ] Add the script to visualize scene graph generation used in the paper
+
+
+## Citation
+
+Please use this citation if you want to cite our paper:
+
+```
+@article{knyazev2020graphdensity,
+  title={Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation},
+  author={Knyazev, Boris and de Vries, Harm and Cangea, Cătălina and Taylor, Graham W and Courville, Aaron and Belilovsky, Eugene},
+  journal={arXiv preprint arXiv:2005.08230},
+  year={2020}
+}
+```
