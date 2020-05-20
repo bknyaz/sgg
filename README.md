@@ -10,16 +10,16 @@ In this visualization, `woman sitting on rock` is a **zero-shot** triplet, which
 This code accompanies our paper [Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky. "Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation"](https://arxiv.org/search/cs?searchtype=author&query=Knyazev%2C+B)
 
 
-To run our experiments we used amazing [Rowan Zellers' code for Neural Motifs](https://github.com/rowanz/neural-motifs). Its only problem is the difficult to run it in PyTorch > 0.3, which is often required on recent GPUs.
+To run our experiments we used amazing [Rowan Zellers' code for Neural Motifs](https://github.com/rowanz/neural-motifs). Its only problem is the difficult to be run in PyTorch > 0.3, making it hard to use it on some recent GPUs.
 
 So, in this repo, I provide a cleaned-up version that can be run in PyTorch 1.2 or later. The code is based on Mask R-CNN built-in in recent PyTorch.
 It should be possible to reproduce our GQA results using this code.
 
-**This code does not require building or downloading anything in advance**. Training the Scene Graph Classification (SGCls) model is as easy as running this command:
+**This code does not require building or manually downloading anything in advance**. Training the Scene Graph Classification (SGCls) model with our loss on Visual Genome is as easy as running this command:
 
-`python main.py -data data_path`
+`python main.py -data data_path -loss dnorm`
 
-The script will download all data and create the following directories:
+The script will automatically download all data and create the following directories (make sure you have at lease 30Gb in `data_path`):
 
 ```
 data_path
@@ -32,17 +32,49 @@ data_path
 |   |   ...
 ```
 
+To run it on GQA, use:
 
-**This repository is in progress, use at your own risk.**
+`python main.py -data data_path -loss dnorm -split gqa -lr 0.002`
+
+Checkpoints and predictions will be saved locally in `./results`. This can be changed by the `-save_dir` flag.
+
+**This repository is still in progress, please report any issues.**
+
+## Requirements
+
+- Python > 3.5
+- PyTorch >= 1.2
+- Other standard libraries
+
+Should be enough to install these libraries (in addition to PyTorch):
+```
+conda install -c anaconda h5py cython dill pandas
+conda install -c conda-forge pycocotools tqdm
+```
 
 ## TODO
 
 - [x] Message Passing with Mask R-CNN
 - [x] Automatically download all files required to run the code
-- [ ] Obtain results on VG
-- [ ] Obtain results on GQA
+- [x] Obtain SGCls/PredCls results on VG
+- [ ] Obtain SGCls/PredCls results on GQA
+- [ ] Obtain SGGen results on GQA
 - [ ] Add the script to visualize scene graph generation used in the paper
 
+
+## VG Results
+
+Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while in the paper we used Faster R-CNN with VGG16 as a backbone, hence the difference. See full details in the paper. Pretraining Mask R-CNN  on VG should help to improve results.
+
+| Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
+|:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
+| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on COCO | 47.1 | 7.8 | 74.5 | 23.5 |
+| D-norm (ours), this repo | Mask R-CNN (ResNet-50) pretrained on COCO |47.4 | 9.0 | 75.4 | 27.3
+| D-norm (ours), paper | Faster R-CNN (VGG16) pretrained on VG |48.6 | 9.1 | 78.2 | 28.4
+
+## GQA Results
+
+## Scene Graph Visualizations
 
 ## Citation
 
