@@ -20,6 +20,11 @@ data_dir = sys.argv[2]
 save_dir = sys.argv[3]
 checkpoint_name = '%s_maskrcnn_res50fpn.pth' % VG.split
 
+if not os.path.exists(save_dir):
+    if len(save_dir) == 0:
+        raise ValueError("save_dir must be a valid path")
+    os.mkdir(save_dir)
+
 class VGLoader(VG):
     def __init__(self, mode, data_dir, transforms):
         super(VGLoader, self).__init__(mode, data_dir, num_val_im=5000, filter_duplicate_rels=True,
@@ -32,7 +37,7 @@ class VGLoader(VG):
     def __getitem__(self, idx):
         index = idx
 
-        img = Image.open(self.filenames[index]).convert('RGB')
+        img = Image.open(os.path.join(self.images_dir, self.filenames[index])).convert('RGB')
         w, h = img.size
 
         gt_boxes = self.gt_boxes[index].copy()
