@@ -57,14 +57,14 @@ conda install -c conda-forge pycocotools tqdm
 - [x] Message Passing with Mask R-CNN
 - [x] Automatically download all files required to run the code
 - [x] Obtain SGCls/PredCls results on VG
-- [ ] Obtain SGCls/PredCls results on GQA
+- [x] Obtain SGCls/PredCls results on GQA
 - [ ] Obtain SGGen results on GQA
-- [ ] Add the script to visualize scene graph generation used in the paper
+- [ ] Add the script to visualize scene graph generation using a trained checkpoint
 
 
 ## VG Results
 
-Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while in the paper we used Faster R-CNN with VGG16 as a backbone, hence the difference. See full details in the paper. Pretraining Mask R-CNN  on VG should help to improve results.
+Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while in the paper we used Faster R-CNN with VGG16 as a backbone,  hence the difference. See full details in the paper. Pretraining Mask R-CNN  on VG should help to improve results.
 
 | Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
 |:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
@@ -73,6 +73,14 @@ Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while i
 | D-norm (ours), paper | Faster R-CNN (VGG16) pretrained on VG |48.6 | 9.1 | 78.2 | 28.4
 
 ## GQA Results
+
+In this repo, I am using a slightly different edge model in [UnionBoxesAndFeats](lib/get_union_boxes.py) to avoid building code and simplify the pipeline. This can contribute to the difference. Using [Neural Motifs's](https://github.com/rowanz/neural-motifs) edge model should lead to more similar results.
+
+| Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
+|:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
+| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on COCO | 27.1 | 2.9 | 58.4 | 33.1 |
+| D-norm (ours), this repo | Mask R-CNN (ResNet-50) pretrained on COCO |27.4 | 3.1 | 59.6 | 36.0
+| D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on COCO | 27.6 | 3.0 | 61.0 | 37.2
 
 ## Scene Graph Visualizations
 

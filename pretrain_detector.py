@@ -51,6 +51,13 @@ class VGLoader(VG):
             gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]].clip(None, h)
             gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]].clip(None, w)
 
+        if VG.split in ['vte', 'gqa']:
+            # width, height can become zero after clipping (need to double-check why)
+            ind_zero = (gt_boxes[:, 2] - gt_boxes[:, 0]) == 0 & (gt_boxes[:, 0] > 0)  # x1 == x2 and x1 > 0
+            gt_boxes[ind_zero, 0] -= 1
+            ind_zero = (gt_boxes[:, 3] - gt_boxes[:, 1]) == 0 & (gt_boxes[:, 1] > 0)  # y1 == y2 and y1 > 0
+            gt_boxes[ind_zero, 1] -= 1
+
         gt_boxes = torch.as_tensor(gt_boxes, dtype=torch.float32)
 
         target = {}
