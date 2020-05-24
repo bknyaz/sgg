@@ -54,7 +54,13 @@ def optimistic_restore(network, state_dict):
 
 
 def bbox_overlaps(boxes1, boxes2):
-    return box_iou(torch.from_numpy(boxes1.astype(np.float32)), torch.from_numpy(boxes2.astype(np.float32))).numpy()
+    is_np = isinstance(boxes1, np.ndarray)
+    if is_np:
+        boxes1, boxes2 = torch.from_numpy(boxes1), torch.from_numpy(boxes2)
+    iou =  box_iou(boxes1.float(), boxes2.float())
+    if is_np:
+        return iou.numpy()
+    return iou
 
 
 def grad_clip(detector, clip, verbose):

@@ -242,7 +242,7 @@ def val_batch(batch_num, b, evaluator, eval_m, val_dataset, evaluator_list, eval
 
             return pred_entries
 
-        except ValueError as e:
+        except (ValueError, IndexError) as e:
             print('no objects or relations found'.upper(), e, b[0][-1], 'trying a smaller threshold')
 
 
