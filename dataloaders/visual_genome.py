@@ -719,3 +719,4 @@ def filter_dups(gt_rels):
 
     gt_rels = np.array(gt_rels)
     return gt_rels
+

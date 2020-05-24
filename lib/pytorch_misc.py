@@ -17,8 +17,21 @@ from torchvision.ops.boxes import box_iou
 
 def optimistic_restore(network, state_dict):
     mismatch = False
+    only_detector = False
     own_state = network.state_dict()
-    for name, param in state_dict.items():
+    for name_, param in state_dict.items():
+        name2 = 'detector.' + name_
+        if name2 in own_state and name_ not in own_state:
+            name = name2
+            only_detector = True
+        else:
+            name = name_
+            if only_detector:
+                print('could not restore')
+                mismatch = True
+
+            only_detector = False
+
         if name not in own_state:
             print("Unexpected key {} in state_dict with size {}".format(name, param.size()))
             mismatch = True
@@ -30,15 +43,18 @@ def optimistic_restore(network, state_dict):
                                                                     param.size()))
             mismatch = True
 
-    missing = set(own_state.keys()) - set(state_dict.keys())
-    if len(missing) > 0:
-        print("We couldn't find {}".format(','.join(missing)))
-        mismatch = True
+    if only_detector:
+        print('detector restored - {} success ({} keys)'.format('NOT' if mismatch else '', len(state_dict.items())))
+    else:
+        missing = set(own_state.keys()) - set(state_dict.keys())
+        if len(missing) > 0:
+            print("We couldn't find {}".format(','.join(missing)))
+            mismatch = True
     return not mismatch
 
 
 def bbox_overlaps(boxes1, boxes2):
-    return box_iou(torch.from_numpy(boxes1), torch.from_numpy(boxes2)).numpy()
+    return box_iou(torch.from_numpy(boxes1.astype(np.float32)), torch.from_numpy(boxes2.astype(np.float32))).numpy()
 
 
 def grad_clip(detector, clip, verbose):
