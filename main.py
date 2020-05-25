@@ -215,10 +215,17 @@ def val_batch(batch_num, b, evaluator, eval_m, val_dataset, evaluator_list, eval
                 det_res = [det_res]
 
             for i, (boxes_i, objs_i, obj_scores_i, rels_i, pred_scores_i) in enumerate(det_res):
+
+                if conf.split == 'stanford':
+                    w, h = b[i][1][0, :2]
+                    scale_gt = 1. / (BOX_SCALE / max(w, h))
+                else:
+                    scale_gt = 1.
+
                 gt_entry = {
                     'gt_classes': val_dataset.gt_classes[batch_num + i].copy(),
                     'gt_relations': val_dataset.relationships[batch_num + i].copy(),
-                    'gt_boxes': val_dataset.gt_boxes[batch_num + i].copy(),
+                    'gt_boxes': val_dataset.gt_boxes[batch_num + i].copy() * scale_gt,
                 }
 
                 pred_entry = {

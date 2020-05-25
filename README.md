@@ -19,7 +19,7 @@ It should be possible to reproduce our GQA results using this code.
 
 `python main.py -data data_path -loss dnorm`
 
-The script will automatically download all data and create the following directories (make sure you have at lease 30Gb in `data_path`):
+The script will automatically download all data and create the following directories (make sure you have at least 30GB of disk space in `data_path`):
 
 ```
 data_path
@@ -36,7 +36,7 @@ To run it on GQA, use:
 
 `python main.py -data data_path -loss dnorm -split gqa -lr 0.002`
 
-Checkpoints and predictions will be saved locally in `./results`. This can be changed by the `-save_dir` flag.
+Checkpoints and predictions will be saved locally in `./results`. This can be changed by the `-save_dir` flag. See examples below.
 
 **This repository is still in progress, please report any issues.**
 
@@ -52,14 +52,15 @@ conda install -c anaconda h5py cython dill pandas
 conda install -c conda-forge pycocotools tqdm
 ```
 
+Results in this repo were obtained on a single GPU 1080/2080 Ti, up to 11GB of GPU memory and 32GB of RAM was required.
+
 ## TODO
 
 - [x] Message Passing with Mask R-CNN
 - [x] Automatically download all files required to run the code
-- [x] Obtain SGCls/PredCls results on VG
-- [x] Obtain SGCls/PredCls results on GQA
-- [ ] Obtain SGGen results on GQA
-- [ ] Add the script to visualize scene graph generation using a trained checkpoint
+- [x] Obtain SGCls/PredCls results on VG and GQA
+- [x] Obtain SGGen results on VG and GQA
+- [ ] Add trained checkpoints and the script to visualize scene graph generation using the trained checkpoint on VG and GQA
 
 
 ## VG Results
@@ -69,8 +70,29 @@ Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while i
 | Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
 |:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
 | Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on COCO | 47.1 | 7.8 | 74.5 | 23.5 |
-| D-norm (ours), this repo | Mask R-CNN (ResNet-50) pretrained on COCO |47.4 | 9.0 | 75.4 | 27.3
+| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on COCO |47.4 | 9.0 | 75.4 | 27.3
 | D-norm (ours), paper | Faster R-CNN (VGG16) pretrained on VG |48.6 | 9.1 | 78.2 | 28.4
+
+<sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -save_dir VG_sgcls`
+
+### Scene Graph Generation on VG
+
+| Loss | Detector |  SGGen-R@100 |  SGGen-R_ZS@100 | SGGen-mR@100
+|:-----|:-----:|:-----:|:-----:|:-----:|
+| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on VG | 26.4 | 1.0 | 6.3
+| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on VG | 26.5 | 1.4 | 9.5
+| D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on VG | 28.2 | 1.2 | 9.5
+
+<sup>‡</sup> Steps to reproduce the results above:
+1. Fine-tune Mask R-CNN on GQA:
+`python pretrain_detector.py stanford data_path ./pretrain_VG`  # takes about 1 day
+
+2. Train SGCls:
+`python main.py -data data_path -loss dnorm -ckpt pretrain_VG/gqa_maskrcnn_res50fpn.pth -save_dir VG_sgdet`   # takes about 1 day
+
+3. Evaluate SGGen:
+`python main.py -data data_path -ckpt ./VG_sgdet/vgrel.pth -m sgdet -nepoch 0`  # takes a couple hours
+
 
 ## GQA Results
 
@@ -79,8 +101,29 @@ In this repo, I am using a slightly different edge model in [UnionBoxesAndFeats]
 | Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
 |:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
 | Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on COCO | 27.1 | 2.9 | 58.4 | 33.1 |
-| D-norm (ours), this repo | Mask R-CNN (ResNet-50) pretrained on COCO |27.4 | 3.1 | 59.6 | 36.0
+| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on COCO |27.4 | 3.1 | 59.6 | 36.0
 | D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on COCO | 27.6 | 3.0 | 61.0 | 37.2
+
+<sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -split gqa -lr 0.002 -save_dir GQA_sgcls`  # takes about 1 day
+
+### Scene Graph Generation on GQA
+
+| Loss | Detector |  SGGen-R@300 |  SGGen-R_ZS@300 | SGGen-mR@300
+|:-----|:-----:|:-----:|:-----:|:-----:|
+| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on GQA | 6.2 | 0.5 | 1.3
+| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on GQA | 6.3 | 0.7 | 2.4
+| D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on GQA | 4.6 | 0.4 | 2.0
+
+<sup>‡</sup> Steps to reproduce the results above:
+
+ 1. Fine-tune Mask R-CNN on GQA:
+`python pretrain_detector.py gqa data_path ./pretrain_GQA`  # takes about 1 day
+
+2. Train SGCls:
+`python main.py -data data_path -lr 0.002 -split gqa -nosave -loss dnorm -ckpt pretrain_GQA/gqa_maskrcnn_res50fpn.pth -save_dir GQA_sgdet`   # takes about 1 day
+
+3. Evaluate SGGen:
+`python main.py -data data_path -split gqa -ckpt ./GQA_sgdet/vgrel.pth -m sgdet -nosave -nepoch 0`  # takes a couple hours
 
 ## Scene Graph Visualizations
 
