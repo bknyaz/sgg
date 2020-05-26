@@ -20,7 +20,7 @@ def download(url, data_dir):
     filename = os.path.join(data_dir, urlparse.parse_qs(urlparse.urlparse(file_info['href']).query)['filename'][0])
     if not os.path.isfile(filename):
         print('downloading %s ...' % filename)
-        cmd = "wget -O \"/%s\" \"%s\"" % (filename, file_info['href'])
+        cmd = "wget -O \"%s\" \"%s\"" % (filename, file_info['href'])
         return_code = subprocess.call(cmd, shell=True)
         print('return code for %s = %d' % (filename, return_code))
 
