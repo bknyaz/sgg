@@ -24,11 +24,13 @@ The script will automatically download all data and create the following directo
 ```
 data_path
 │   VG
-│   │   VG_100K
+│   │   VG.tar
+│   │   VG_100K (this will appear after extracting VG.tar)
 │   │   ...
 │
 └───GQA
-│   │   sceneGraphs
+│   │   GQA_scenegraphs.tar
+│   │   sceneGraphs (this will appear after extracting GQA_scenegraphs.tar)
 |   |   ...
 ```
 
