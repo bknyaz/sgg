@@ -67,7 +67,7 @@ Results in this repo were obtained on a single GPU 1080/2080 Ti, up to 11GB of G
 
 ## VG Results
 
-Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while in the paper we used Faster R-CNN with VGG16 as a backbone,  hence the difference. See full details in the paper. Pretraining Mask R-CNN  on VG should help to improve results.
+Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while in the paper we used Faster R-CNN with VGG16 as a backbone. We also skip a refinement step in this repo, which is usually required to improve SGGen results. Hence there's some difference in results from the paper. See full details in the paper. 
 
 | Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
 |:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
@@ -76,6 +76,8 @@ Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while i
 | D-norm (ours), paper | Faster R-CNN (VGG16) pretrained on VG |48.6 | 9.1 | 78.2 | 28.4
 
 <sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -save_dir VG_sgcls`
+
+Or download our [VG-SGCls-1 checkpoint](https://drive.google.com/file/d/1m-_fvznwDgqhKzMYL15HcZIy2qi38U5X/view?usp=sharing)
 
 ### Scene Graph Generation on VG
 
@@ -86,11 +88,16 @@ Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while i
 | D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on VG | 28.2 | 1.2 | 9.5
 
 <sup>‡</sup> Steps to reproduce the results above:
-1. Fine-tune Mask R-CNN on GQA:
+1. Fine-tune Mask R-CNN on VG:
 `python pretrain_detector.py stanford data_path ./pretrain_VG`  # takes about 1 day
+
+Or download our [VG-detector checkpoint](https://drive.google.com/file/d/1XtlObixHaLokoQx9VX9r4a-Nx5jxR63i/view?usp=sharing)
 
 2. Train SGCls:
 `python main.py -data data_path -loss dnorm -ckpt pretrain_VG/gqa_maskrcnn_res50fpn.pth -save_dir VG_sgdet`   # takes about 1 day
+
+Or download our [VG-SGCls-2 checkpoint](https://drive.google.com/file/d/1cE8hOi2YqXgXprY44thlxKujMgtWggHe/view?usp=sharing)
+This checkpoint is different from VG-SGCls-1, because here the model is trained on the features of the VG-pretrained detector. This checkpoint can be used in the next step.
 
 3. Evaluate SGGen:
 `python main.py -data data_path -ckpt ./VG_sgdet/vgrel.pth -m sgdet -nepoch 0`  # takes a couple hours
@@ -108,6 +115,8 @@ In this repo, I am using a slightly different edge model in [UnionBoxesAndFeats]
 
 <sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -split gqa -lr 0.002 -save_dir GQA_sgcls`  # takes about 1 day
 
+Or download our [GQA-SGCls-1 checkpoint](https://drive.google.com/file/d/1ktyV7atNRIS0UhiQOoPCR_392FQz6eB6/view?usp=sharing)
+
 ### Scene Graph Generation on GQA
 
 | Loss | Detector |  SGGen-R@300 |  SGGen-R_ZS@300 | SGGen-mR@300
@@ -121,8 +130,14 @@ In this repo, I am using a slightly different edge model in [UnionBoxesAndFeats]
  1. Fine-tune Mask R-CNN on GQA:
 `python pretrain_detector.py gqa data_path ./pretrain_GQA`  # takes about 1 day
 
+Or download our [GQA-detector checkpoint](https://drive.google.com/file/d/1VR8uMR0WMbqiA2hPIxq7AzvpNqzzyKfT/view?usp=sharing)
+
 2. Train SGCls:
 `python main.py -data data_path -lr 0.002 -split gqa -nosave -loss dnorm -ckpt pretrain_GQA/gqa_maskrcnn_res50fpn.pth -save_dir GQA_sgdet`   # takes about 1 day
+
+Or download our [GQA-SGCls-2 checkpoint](https://drive.google.com/file/d/1wldE-ONCs15balmR1IdZvnD2byZ8dNB7/view?usp=sharing)
+This checkpoint is different from SGCls-1, because here the model is trained on the features of the GQA-pretrained detector.
+This checkpoint can be used in the next step.
 
 3. Evaluate SGGen:
 `python main.py -data data_path -split gqa -ckpt ./GQA_sgdet/vgrel.pth -m sgdet -nosave -nepoch 0`  # takes a couple hours
