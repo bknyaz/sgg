@@ -91,15 +91,10 @@ Or download our [VG-SGCls-1 checkpoint](https://drive.google.com/file/d/1m-_fvzn
 
 <sup>‡</sup> Steps to reproduce the results above:
 1. Fine-tune Mask R-CNN on VG:
-`python pretrain_detector.py stanford data_path ./pretrain_VG`  # takes about 1 day
-
-Or download our [VG-detector checkpoint](https://drive.google.com/file/d/1XtlObixHaLokoQx9VX9r4a-Nx5jxR63i/view?usp=sharing)
+`python pretrain_detector.py stanford data_path ./pretrain_VG`  # takes about 1 day. Or download our [VG-detector checkpoint](https://drive.google.com/file/d/1XtlObixHaLokoQx9VX9r4a-Nx5jxR63i/view?usp=sharing)
 
 2. Train SGCls:
-`python main.py -data data_path -loss dnorm -ckpt pretrain_VG/gqa_maskrcnn_res50fpn.pth -save_dir VG_sgdet`   # takes about 1 day
-
-Or download our [VG-SGCls-2 checkpoint](https://drive.google.com/file/d/1cE8hOi2YqXgXprY44thlxKujMgtWggHe/view?usp=sharing)
-This checkpoint is different from VG-SGCls-1, because here the model is trained on the features of the VG-pretrained detector. This checkpoint can be used in the next step.
+`python main.py -data data_path -loss dnorm -ckpt pretrain_VG/gqa_maskrcnn_res50fpn.pth -save_dir VG_sgdet`   # takes about 1 day. Or download our [VG-SGCls-2 checkpoint](https://drive.google.com/file/d/1cE8hOi2YqXgXprY44thlxKujMgtWggHe/view?usp=sharing). This checkpoint is different from VG-SGCls-1, because here the model is trained on the features of the VG-pretrained detector. This checkpoint can be used in the next step.
 
 3. Evaluate SGGen:
 `python main.py -data data_path -ckpt ./VG_sgdet/vgrel.pth -m sgdet -nepoch 0`  # takes a couple hours
@@ -115,9 +110,7 @@ In this repo, I am using a slightly different edge model in [UnionBoxesAndFeats]
 | D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on COCO |27.4 | 3.1 | 59.6 | 36.0
 | D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on COCO | 27.6 | 3.0 | 61.0 | 37.2
 
-<sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -split gqa -lr 0.002 -save_dir GQA_sgcls`  # takes about 1 day
-
-Or download our [GQA-SGCls-1 checkpoint](https://drive.google.com/file/d/1ktyV7atNRIS0UhiQOoPCR_392FQz6eB6/view?usp=sharing)
+<sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -split gqa -lr 0.002 -save_dir GQA_sgcls`  # takes about 1 day. Or download our [GQA-SGCls-1 checkpoint](https://drive.google.com/file/d/1ktyV7atNRIS0UhiQOoPCR_392FQz6eB6/view?usp=sharing)
 
 ### Scene Graph Generation on GQA
 
@@ -130,15 +123,10 @@ Or download our [GQA-SGCls-1 checkpoint](https://drive.google.com/file/d/1ktyV7a
 <sup>‡</sup> Steps to reproduce the results above:
 
  1. Fine-tune Mask R-CNN on GQA:
-`python pretrain_detector.py gqa data_path ./pretrain_GQA`  # takes about 1 day
-
-Or download our [GQA-detector checkpoint](https://drive.google.com/file/d/1VR8uMR0WMbqiA2hPIxq7AzvpNqzzyKfT/view?usp=sharing)
+`python pretrain_detector.py gqa data_path ./pretrain_GQA`  # takes about 1 day. Or download our [GQA-detector checkpoint](https://drive.google.com/file/d/1VR8uMR0WMbqiA2hPIxq7AzvpNqzzyKfT/view?usp=sharing)
 
 2. Train SGCls:
-`python main.py -data data_path -lr 0.002 -split gqa -nosave -loss dnorm -ckpt pretrain_GQA/gqa_maskrcnn_res50fpn.pth -save_dir GQA_sgdet`   # takes about 1 day
-
-Or download our [GQA-SGCls-2 checkpoint](https://drive.google.com/file/d/1wldE-ONCs15balmR1IdZvnD2byZ8dNB7/view?usp=sharing)
-This checkpoint is different from SGCls-1, because here the model is trained on the features of the GQA-pretrained detector.
+`python main.py -data data_path -lr 0.002 -split gqa -nosave -loss dnorm -ckpt pretrain_GQA/gqa_maskrcnn_res50fpn.pth -save_dir GQA_sgdet`   # takes about 1 day. Or download our [GQA-SGCls-2 checkpoint](https://drive.google.com/file/d/1wldE-ONCs15balmR1IdZvnD2byZ8dNB7/view?usp=sharing). This checkpoint is different from SGCls-1, because here the model is trained on the features of the GQA-pretrained detector.
 This checkpoint can be used in the next step.
 
 3. Evaluate SGGen:
