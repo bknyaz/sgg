@@ -63,8 +63,7 @@ Results in this repo were obtained on a single GPU 1080/2080 Ti, up to 11GB of G
 - [x] Obtain SGCls/PredCls results on VG and GQA
 - [x] Obtain SGGen results on VG and GQA
 - [x] Add trained checkpoints 
-- [ ] Add SGGen checkpoints after refinement
-- [ ] Add the script to visualize scene graph generation using the trained checkpoint on VG and GQA
+- [x] **Add the code to visualize scene graph generation using the trained checkpoint on [GQA](Visualize_SG_predictions.ipynb)**
 
 
 ## VG Results
