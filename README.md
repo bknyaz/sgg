@@ -8,7 +8,7 @@ In this visualization, `woman sitting on rock` is a **zero-shot** triplet, which
 
 
 ## TODO
-- [ ] Add code for our [Generative Compositional Augmentations for Scene Graph Prediction][https://arxiv.org/abs/2007.05756]
+- [ ] Add code for our [Generative Compositional Augmentations for Scene Graph Prediction][https://arxiv.org/abs/2007.05756)
 - [x] Message Passing with Mask R-CNN
 - [x] Automatically download all files required to run the code
 - [x] Obtain SGCls/PredCls results on VG and GQA
