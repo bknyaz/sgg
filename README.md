@@ -7,7 +7,23 @@
 In this visualization, `woman sitting on rock` is a **zero-shot** triplet, which means that the combination of `woman`, `sitting on` and `rock` has never been observed during training. However, each of the object and predicate has been observed, but together with other objects and predicate. For example, `woman sitting on chair` has been observed and is not a zero-shot triplet. Making correct predictions for zero-shots is very challenging, so in our paper we address this problem and improve zero-shot as well as few-shot results.
 
 
-This code accompanies our paper [Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky. "Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation"](https://arxiv.org/search/cs?searchtype=author&query=Knyazev%2C+B)
+## TODO
+- [ ] Add code for our [Generative Compositional Augmentations for Scene Graph Prediction][https://arxiv.org/abs/2007.05756]
+- [x] Message Passing with Mask R-CNN
+- [x] Automatically download all files required to run the code
+- [x] Obtain SGCls/PredCls results on VG and GQA
+- [x] Obtain SGGen results on VG and GQA
+- [x] Add trained checkpoints 
+- [x] **Add [the code to visualize scene graph generation on GQA](Visualize_SG_predictions.ipynb) using the trained checkpoint**
+
+
+This code accompanies two papers: 
+
+1. [Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky. "Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation"](https://arxiv.org/abs/2005.08230)
+2. [Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky. "Generative Compositional Augmentations for Scene Graph Prediction"](https://arxiv.org/abs/2007.05756)
+
+
+**At this moment this code and README concerns the first paper only. I will update this repo to include necessary information to reproduce our results for both papers.**
 
 
 To run our experiments we used amazing [Rowan Zellers' code for Neural Motifs](https://github.com/rowanz/neural-motifs). Its only problem is the difficult to be run in PyTorch > 0.3, making it hard to use it on some recent GPUs.
@@ -55,15 +71,6 @@ conda install -c conda-forge pycocotools tqdm
 ```
 
 Results in this repo were obtained on a single GPU 1080/2080 Ti, up to 11GB of GPU memory and 32GB of RAM was required.
-
-## TODO
-
-- [x] Message Passing with Mask R-CNN
-- [x] Automatically download all files required to run the code
-- [x] Obtain SGCls/PredCls results on VG and GQA
-- [x] Obtain SGGen results on VG and GQA
-- [x] Add trained checkpoints 
-- [x] **Add [the code to visualize scene graph generation on GQA](Visualize_SG_predictions.ipynb) using the trained checkpoint**
 
 
 ## VG Results
@@ -133,9 +140,11 @@ This checkpoint can be used in the next step.
 
 ## Scene Graph Visualizations
 
+See [the code to visualize scene graph generation on GQA](Visualize_SG_predictions.ipynb)
+
 ## Citation
 
-Please use this bibtex if you want to cite our paper:
+Please use these references if you want to cite our papers or code:
 
 ```
 @inproceedings{knyazev2020graphdensity,
@@ -144,5 +153,16 @@ Please use this bibtex if you want to cite our paper:
   booktitle={British Machine Vision Conference (BMVC)},
   pdf={http://arxiv.org/abs/2005.08230},
   year={2020}
+}
+```
+
+```
+@misc{knyazev2020generative,
+    title={Generative Compositional Augmentations for Scene Graph Prediction},
+    author={Boris Knyazev and Harm de Vries and Cătălina Cangea and Graham W. Taylor and Aaron Courville and Eugene Belilovsky},
+    year={2020},
+    eprint={2007.05756},
+    archivePrefix={arXiv},
+    primaryClass={cs.CV}
 }
 ```
