@@ -41,7 +41,7 @@ def filter_dets(boxes, obj_scores, obj_classes, rel_inds, pred_scores):
     obj_scores1 = obj_scores.data[rel_inds[:,1]]
 
     pred_scores_max, pred_classes_argmax = pred_scores.data[:,1:].max(1)
-    pred_classes_argmax = pred_classes_argmax + 1
+    # pred_classes_argmax = pred_classes_argmax + 1
 
     rel_scores_argmaxed = pred_scores_max * obj_scores0 * obj_scores1
     rel_scores_vs, rel_scores_idx = torch.sort(rel_scores_argmaxed.view(-1), dim=0, descending=True)

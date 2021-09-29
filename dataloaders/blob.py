@@ -15,7 +15,7 @@ else:
 
 
 class Blob(object):
-    def __init__(self, mode='det', is_train=False, num_gpus=1, primary_gpu=0, batch_size_per_gpu=3, mrcnn=False, is_cuda=True):
+    def __init__(self, mode='det', is_train=False, num_gpus=1, primary_gpu=0, batch_size_per_gpu=3, torch_detector=False, is_cuda=True):
         """
         Initializes an empty Blob object.
         :param mode: 'det' for detection and 'rel' for det+relationship
@@ -28,7 +28,7 @@ class Blob(object):
         self.num_gpus = num_gpus
         self.batch_size_per_gpu = batch_size_per_gpu
         self.primary_gpu = primary_gpu
-        self.mrcnn = mrcnn
+        self.torch_detector = torch_detector
         self.is_cuda = is_cuda
 
         self.fns = []  # image file ids
@@ -58,17 +58,21 @@ class Blob(object):
         self.proposal_chunks = None
         self.proposals = []
 
+
     @property
     def is_flickr(self):
         return self.mode == 'flickr'
+
 
     @property
     def is_rel(self):
         return self.mode == 'rel'
 
+
     @property
     def volatile(self):
         return not self.is_train
+
 
     def append(self, d):
         """
@@ -105,7 +109,7 @@ class Blob(object):
         # Augment with anchor targets
         # if self.is_train:
         #     train_anchors_, train_anchor_inds_, train_anchor_targets_, train_anchor_labels_ = \
-        #         anchor_target_layer(gt_boxes_, (h, w), mrcnn=self.mrcnn)
+        #         anchor_target_layer(gt_boxes_, (h, w), torch_detector=self.torch_detector)
         #
         #     self.train_anchors.append(np.hstack((train_anchors_, train_anchor_targets_)))
         #
@@ -136,7 +140,7 @@ class Blob(object):
             return 0, chunk_sizes  # Variable(tensor([]), volatile=self.volatile)
         return Variable(tensor(t)), chunk_sizes
 
-    # @profile
+
     def reduce(self):
         """ Merges all the detections into flat lists + numbers of how many are in each"""
         if len(self.imgs) != self.batch_size_per_gpu * self.num_gpus:
@@ -144,7 +148,7 @@ class Blob(object):
                 len(self.imgs), self.batch_size_per_gpu, self.num_gpus
             ))
 
-        if not self.mrcnn:
+        if not self.torch_detector:
             self.imgs = Variable(torch.stack(self.imgs, 0))
 
         self.im_sizes = np.stack(self.im_sizes).reshape(
@@ -164,7 +168,6 @@ class Blob(object):
             self.proposals, self.proposal_chunks = self._chunkize(self.proposals, tensor=torch.FloatTensor)
 
 
-
     def _scatter(self, x, chunk_sizes, dim=0):
         """ Helper function"""
         if self.num_gpus == 1:
@@ -172,10 +175,10 @@ class Blob(object):
         return torch.nn.parallel.scatter_gather.Scatter.apply(
             list(range(self.num_gpus)), chunk_sizes, dim, x)
 
-    # @profile
+
     def scatter(self):
         """ Assigns everything to the GPUs"""
-        if not self.mrcnn:
+        if not self.torch_detector:
             self.imgs = self._scatter(self.imgs, [self.batch_size_per_gpu] * self.num_gpus)
 
         self.gt_classes_primary = self.gt_classes.cuda(self.primary_gpu, **cuda_args) if self.is_cuda else self.gt_classes
@@ -201,7 +204,13 @@ class Blob(object):
         if self.proposal_chunks is not None:
             self.proposals = self._scatter(self.proposals, self.proposal_chunks)
 
-    # @profile
+        return self
+
+
+    def __len__(self):
+        return len(self.im_sizes)
+
+
     def __getitem__(self, index):
         """
         Returns a tuple containing data

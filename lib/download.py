@@ -46,13 +46,17 @@ def download(url_name_pair, data_dir):
     return filename
 
 
-def download_all_data(root_dir):
+def download_all_data(root_dir, gqa=True, vg=True):
     if not os.path.exists(root_dir):
         if len(root_dir) == 0:
             raise ValueError("root_dir must be a valid path")
         os.mkdir(root_dir)
 
     for name, link in zip(['GQA', 'VG'], [GQA_link, VG_link]):
+        if name == 'GQA' and not gqa:
+            continue
+        if name == 'VG' and not vg:
+            continue
         data_dir = os.path.join(root_dir, name)
         print(name, data_dir)
         if not os.path.exists(data_dir):

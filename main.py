@@ -1,7 +1,20 @@
 """
-Training script for Scene Graph Generation
+Training script for Scene Graph Generation (or Scene Graph Prediction).
 
-Based on https://github.com/rowanz/neural-motifs
+The script allows to reproduce the main experiments from our two papers:
+
+[1] Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky.
+Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation. BMVC 2020. https://arxiv.org/abs/2005.08230
+
+[2] Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky.
+Generative Compositional Augmentations for Scene Graph Prediction. ICCV 2021. https://arxiv.org/abs/2007.05756
+
+A large portion of this repo is based on https://github.com/rowanz/neural-motifs (MIT License).
+For the paper [2], some GAN layers are based on https://github.com/google/sg2im (Apache-2.0 License).
+
+Example to train IMP++ with GAN and StructN scene graph perturbations:
+
+    python main.py -ckpt ./data/VG/vg-faster-rcnn.tar -gan -largeD -loss dnorm -perturb structn -vis_cond ./data/VG/features.hdf5
 
 """
 
@@ -11,170 +24,200 @@ from dataloaders.visual_genome import VGDataLoader, VG
 conf = ModelConfig()
 VG.split = conf.split  # set VG, GQA or VTE split here to use as a global variable
 
-import numpy as np
+from os.path import join
 import pandas as pd
 import time
-from tqdm import tqdm
-from torch.nn.functional import cross_entropy as CE
-from lib.pytorch_misc import *
-from lib.evaluation.sg_eval import BasicSceneGraphEvaluator, calculate_mR_from_evaluator_list, eval_entry
 import pickle
-from lib.rel_model_stanford import RelModelStanford
 
+from sgg_models.rel_model_stanford import RelModelStanford
+from lib.pytorch_misc import *
+from lib.losses import node_losses, edge_losses
+from lib.eval import val_epoch
+from augment.gan import GAN
+from augment.sg_perturb import SceneGraphPerturb
 
-EVAL_MODES = ['sgdet'] if conf.mode == 'sgdet' else ['predcls', 'sgcls']
-assert conf.mode in EVAL_MODES, (conf.mode, 'other modes not supported')
+# Load VG data
+train_loader, eval_loaders = VGDataLoader.splits(data_dir=conf.data,
+                                                 batch_size=conf.batch_size,
+                                                 num_workers=conf.num_workers,
+                                                 num_gpus=conf.num_gpus,
+                                                 is_cuda=conf.device=='cuda',
+                                                 backbone=conf.backbone,
+                                                 square_pad=True,
+                                                 num_val_im=conf.val_size,
+                                                 filter_non_overlap=conf.mode=='sgdet',
+                                                 exclude_left_right=conf.exclude_left_right,
+                                                 min_graph_size=conf.min_graph_size,
+                                                 max_graph_size=conf.max_graph_size)
 
-train, val_splits = VG.splits(data_dir=conf.data,
-                              num_val_im=conf.val_size,
-                              min_graph_size=conf.min_graph_size,
-                              max_graph_size=conf.max_graph_size,
-                              mrcnn=conf.detector == 'mrcnn',
-                              filter_non_overlap=conf.mode == 'sgdet',
-                              exclude_left_right=conf.exclude_left_right)
-
-train_loader, val_loaders = VGDataLoader.splits(train, val_splits,
-                                               mode='rel',
-                                               batch_size=conf.batch_size,
-                                               num_workers=conf.num_workers,
-                                               num_gpus=conf.num_gpus)
-val_loader, val_loader_zs, test_loader, test_loader_zs = val_loaders
-
-detector = RelModelStanford(train_data=train,
-                            num_gpus=conf.num_gpus,
-                            mode=conf.mode,
-                            use_bias=conf.use_bias,
-                            test_bias=conf.test_bias,
-                            detector_model=conf.detector,
-                            RELS_PER_IMG=conf.rels_per_img)
-
+# Define SGG model
+sgg_model = RelModelStanford(train_data=train_loader.dataset,
+                             mode=conf.mode,
+                             use_bias=conf.use_bias,
+                             test_bias=conf.test_bias,
+                             backbone=conf.backbone,
+                             RELS_PER_IMG=conf.rels_per_img,
+                             edge_model=conf.edge_model)
 # Freeze the detector
-for n, param in detector.detector.named_parameters():
+for n, param in sgg_model.detector.named_parameters():
     param.requires_grad = False
 
-print(print_para(detector), flush=True)
-# print(detector)
+gan = GAN(train_loader.dataset.ind_to_classes,
+          train_loader.dataset.ind_to_predicates,
+          n_ch=sgg_model.edge_dim,
+          pool_sz=sgg_model.pool_sz,
+          fmap_sz=sgg_model.fmap_sz,
+          vis_cond=conf.vis_cond,
+          losses=conf.ganlosses,
+          init_embed=conf.init_embed,
+          largeD=conf.largeD,
+          device=conf.device,
+          data_dir=train_loader.dataset.root) if conf.gan else None
 
-checkpoint_name = 'vgrel.pth'
-checkpoint_path = os.path.join(conf.save_dir, checkpoint_name)
+checkpoint_path = None if conf.save_dir is None else join(conf.save_dir, 'vgrel.pth')
+start_epoch, ckpt = load_checkpoint(conf, sgg_model, checkpoint_path, gan)
+sgg_model.to(conf.device)
+if conf.gan:
+    gan.to(conf.device)
+    if conf.perturb:
+        set_seed(start_epoch + 1)  # to avoid repeating the same perturbations when reloaded from the checkpoint
+        sgp = SceneGraphPerturb(method=conf.perturb,
+                                embed_objs=gan.embed_objs,
+                                subj_pred_obj_pairs=(train_loader.dataset.subj_pred_pairs,
+                                                     train_loader.dataset.pred_obj_pairs),
+                                obj_classes=train_loader.dataset.ind_to_classes,
+                                triplet2str=train_loader.dataset.triplet2str,
+                                L=conf.L, topk=conf.topk, alpha=conf.structn_a,
+                                uniform=conf.uniform, degree_smoothing=conf.degree_smoothing)
 
-start_epoch = -1
-detector.global_batch_iter = 0  # for wandb
-ckpt = None
-
-checkpoint_path_load = checkpoint_path if os.path.exists(checkpoint_path) \
-    else (conf.ckpt if len(conf.ckpt) > 0 else None)
-
-if checkpoint_path_load is not None:
-    print("Loading EVERYTHING from %s" % checkpoint_path_load)
-    ckpt = torch.load(checkpoint_path_load)
-    success = optimistic_restore(detector, ckpt['state_dict'])
-
-    if success and os.path.exists(checkpoint_path):  # vgrel.pth
-        # If there's already a checkpoint in the save_dir path, assume we should load it and continue
-        # Useful to restart the job with exactly the same parameters
-        start_epoch = ckpt['epoch']
-        detector.global_batch_iter = ckpt['global_batch_iter']
-
-
-detector.to(conf.device)
+    if conf.wandb_log:
+        wandb.watch(gan, log="all", log_freq=100 if conf.debug else 2000)
 
 if conf.wandb_log:
-    wandb.watch(detector, log="all", log_freq=100 if conf.debug else 2000)
+    wandb.watch(sgg_model, log="all", log_freq=100 if conf.debug else 2000)
 
 
-def train_batch(b, verbose=False):
-    """
-    :param b: contains:
-          :param imgs: the image, [batch_size, 3, IM_SIZE, IM_SIZE]
-          :param all_anchors: [num_anchors, 4] the boxes of all anchors that we'll be using
-          :param all_anchor_inds: [num_anchors, 2] array of the indices into the concatenated
-                                  RPN feature vector that give us all_anchors,
-                                  each one (img_ind, fpn_idx)
-          :param im_sizes: a [batch_size, 4] numpy array of (h, w, scale, num_good_anchors) for each image.
+def train_batch(batch, verbose=False):
+    set_mode(sgg_model, mode=conf.mode, is_train=True)
 
-          :param num_anchors_per_img: int, number of anchors in total over the feature pyramid per img
+    res = sgg_model(batch.scatter())  # forward pass through an object detector and an SGG model
 
-          Training parameters:
-          :param train_anchor_inds: a [num_train, 5] array of indices for the anchors that will
-                                    be used to compute the training loss (img_ind, fpn_idx)
-          :param gt_boxes: [num_gt, 4] GT boxes over the batch.
-          :param gt_classes: [num_gt, 2] gt boxes where each one is (img_id, class)
-    :return:
-    """
-    set_mode(detector, mode=conf.mode, is_train=True, conf=conf)
+    # 1. Main SGG model object and relationship classification losses (L_cls)----------------------------------------------
+    losses = node_losses(res.rm_obj_dists,   # predicted node labels (objects)
+                         res.rm_obj_labels)  # predicted node labels (objects)
+
+    loss, edges_fg, edges_bg = edge_losses(res.rel_dists,           # predicted edge labels (predicates)
+                                           res.rel_labels[:, -1],   # ground truth edge labels (predicates)
+                                           conf.loss,
+                                           return_idx=True,
+                                           loss_weights=(conf.alpha, conf.beta, conf.gamma))
+    losses.update(loss)
 
     optimizer.zero_grad()
-    res = detector.forward_parallel(b)
-    losses = {'obj_loss': CE(res.rm_obj_dists, res.rm_obj_labels)}
+    loss = sum(losses.values())
+    loss.backward()
+    grad_clip(sgg_model, conf.clip, verbose)
+    optimizer.step()
+    # ------------------------------------------------------------------------------------------------------------------
 
-    idx_fg = torch.nonzero(res.rel_labels[:, -1] > 0).data.view(-1)
-    idx_bg = torch.nonzero(res.rel_labels[:, -1] == 0).data.view(-1)
-    M_FG = len(idx_fg)
-    M_BG = len(idx_bg)
-    M = len(res.rel_dists)
+    # 2. GAN-based updates----------------------------------------------------------------------------------------------
+    if conf.gan:
+        gan.train()
+        # assume a single gpu!
+        gt_boxes, gt_objects, gt_rels = batch[0][3].clone(), batch[0][4].clone(), batch[0][5].clone()
 
-    loss = CE(res.rel_dists, res.rel_labels[:, -1], reduce=False)
-
-    if conf.loss == 'baseline':
-
-        assert conf.alpha == conf.beta == 1, ('wrong loss is used', conf.alpha, conf.beta)
-        loss = conf.lam * (loss / M)  # weight all edges by the same value (divide by M to compute average below)
-        losses['rel_loss'] = loss.sum()  # loss is averaged over all FG and BG edges
-
-    elif conf.loss in ['dnorm', 'dnorm-fgbg']:
-
-        edge_weights = torch.ones(M, device=conf.device)
-
-        if M_FG > 0:
-            edge_weights[idx_fg] = float(conf.alpha) / M_FG   # weight for FG edges (alpha/M_FG instead of 1/M as in the baseline)
-
-        if conf.loss == 'dnorm':
-            # conf.alpha = conf.beta = 1 in our hyperparameter-free loss
-            if M_BG > 0 and M_FG > 0:
-                edge_weights[idx_bg] = float(conf.beta) / M_FG   # weight for BG edges (beta/M_FG instead of 1/M as in the baseline)
+        if conf.perturb:
+            # Scene Graph perturbations
+            gt_objects_fake = sgp.perturb(gt_objects.clone(), gt_rels.clone()).clone()
         else:
-            if M_BG > 0:
-                edge_weights[idx_bg] = float(conf.beta) / M_BG   # weight for BG edges (beta/M_BG instead of 1/M as in the baseline)
+            gt_objects_fake = gt_objects.clone()
 
-        loss = conf.gamma * loss * torch.autograd.Variable(edge_weights)
-        losses['rel_loss'] = loss.sum()
-    else:
-        raise NotImplementedError(conf.loss)
+        # Generate visual features conditioned on the SG
+        fmaps = gan(gt_objects_fake,
+                    sgg_model.get_scaled_boxes(gt_boxes, res.im_inds, res.im_sizes_org),
+                    gt_rels)
 
-    loss_all = sum(losses.values())
-    loss_all.backward()
-    grad_clip(detector, conf.clip, verbose)
-    optimizer.step()  # update Rel and Obj models
+        # Extract node,edge features from fmaps
+        nodes_fake, edges_fake = sgg_model.node_edge_features(fmaps, res.rois, res.rel_inds[:, 1:], res.im_sizes)
 
-    # Compute and log for debugging purposes, but do not use for backprop
-    losses['total'] = loss_all.detach().data
-    if len(idx_fg) > 0:
-        losses['rel_loss_fg'] = loss[idx_fg].sum().detach().data  # average loss for each FG edge
-    if len(idx_bg) > 0:
-        losses['rel_loss_bg'] = loss[idx_bg].sum().detach().data  # average loss for each BG edge
+        # Make SGG predictions for the node,edge features
+        # In case of G update, detach generated features to avoid collaboration between the SGG model and G
+        obj_dists_fake, rel_dists_fake = sgg_model.predict(nodes_fake if conf.attachG else nodes_fake.detach(),
+                                                           edges_fake if conf.attachG else edges_fake.detach(),
+                                                           res.rel_inds,
+                                                           rois=res.rois,
+                                                           im_sizes=res.im_sizes)
 
-    res = pd.Series({x: tensor_item(y) for x, y in losses.items()})  # data[0]
-    return res
+        # 2.1. Generator losses
+        optimizer.zero_grad()
+        G_optimizer.zero_grad()
+        losses_G = {}
+        losses_G.update(gan.loss(features_fake=nodes_fake, is_nodes=True, labels_fake=gt_objects_fake[:, -1]))
+        losses_G.update(gan.loss(features_fake=edges_fake, labels_fake=res.rel_labels[:, -1]))
+        losses_G.update(gan.loss(features_fake=fmaps, is_fmaps=True))
+        for key in losses_G:
+            losses_G[key] = conf.ganw * losses_G[key]
+
+        if 'rec' in conf.ganlosses:
+            sfx = '_rec'
+            losses_G.update(node_losses(obj_dists_fake, gt_objects_fake[:, -1], sfx=sfx))
+            losses_G.update(edge_losses(rel_dists_fake,
+                                        res.rel_labels[:, -1],
+                                        conf.loss,
+                                        edges_fg, edges_bg,
+                                        loss_weights=(conf.alpha, conf.beta, conf.gamma),
+                                        sfx=sfx))
+
+        if len(losses_G) > 0:
+            loss = sum(losses_G.values())
+            loss.backward()
+            if 'rec' in conf.ganlosses:
+                grad_clip(sgg_model, conf.clip, verbose)
+                optimizer.step()
+            G_optimizer.step()
+            losses.update(losses_G)
+
+        # 2.1. Discriminator losses
+        D_optimizer.zero_grad()
+        losses_D = {}
+        losses_D.update(gan.loss(res.node_feat, nodes_fake, is_nodes=True, updateD=True, labels_fake=gt_objects_fake[:, -1],
+                                 labels_real=gt_objects[:, -1]))
+        losses_D.update(gan.loss(res.edge_feat, edges_fake, updateD=True,  labels_fake=res.rel_labels[:, -1]))
+        losses_D.update(gan.loss(res.fmap, fmaps, updateD=True, is_fmaps=True))
+        for key in losses_D:
+            losses_D[key] = conf.ganw * losses_D[key]
+
+        if len(losses_D) > 0:
+            loss = sum(losses_D.values())
+            loss.backward()
+            D_optimizer.step()
+            losses.update(losses_D)
+
+    # ------------------------------------------------------------------------------------------------------------------
+
+    # Compute for debugging purpose (not used for backprop)
+    losses['total'] = sum(losses.values()).detach().data
+
+    return pd.Series({x: tensor_item(y) for x, y in losses.items()})
 
 
 def train_epoch(epoch_num):
-    print('\nepoch %d, smallest lr %f\n' % (epoch, get_smallest_lr(optimizer)))
-    detector.train()
+    print('\nepoch %d, smallest lr %.3e\n' % (epoch_num, get_smallest_lr(optimizer)))
+    sgg_model.train()
     tr = []
     start = time.time()
     for b, batch in enumerate(train_loader):
 
-        tr.append(train_batch(batch, verbose=b % (conf.print_interval * 20) == 0))
+        tr.append(train_batch(batch, verbose=False))
+
+        if conf.wandb_log:
+            conf.wandb_log(tr[-1], step=sgg_model.global_batch_iter, prefix='loss/')
 
         if b % conf.print_interval == 0 and b >= conf.print_interval:
             mn = pd.concat(tr[-conf.print_interval:], axis=1, sort=True).mean(1)
             time_per_batch = (time.time() - start) / conf.print_interval
 
             print(mn)
-
-            if conf.wandb_log:
-                conf.wandb_log(mn.to_dict(), step=detector.global_batch_iter, prefix='loss/')
 
             time_eval_batch = time_per_batch
 
@@ -188,192 +231,60 @@ def train_epoch(epoch_num):
 
             start = time.time()
 
-        detector.global_batch_iter += 1
+        sgg_model.global_batch_iter += 1
 
-    rez = pd.concat(tr, axis=1, sort=True)
-    print("overall{:2d}: ({:.3f})\n{}".format(epoch, rez.mean(1)['total'], rez.mean(1)), flush=True)
+    return
 
-    return rez
-
-
-def val_batch(batch_num, b, evaluator, eval_m, val_dataset, evaluator_list, evaluator_multiple_preds_list):
-
-    if conf.detector == 'mrcnn':
-        scale = 1.
-        box_threshs = [0.2, 0.05, 0.01]
-    else:
-        scale = BOX_SCALE / IM_SCALE
-        box_threshs = [None]
-
-    pred_entries = []
-    for box_score_thresh in box_threshs:
-        detector.set_box_score_thresh(box_score_thresh)
-        try:
-            det_res = detector.forward_parallel(b)  # keep as it was in the original code
-
-            if conf.num_gpus == 1:
-                det_res = [det_res]
-
-            for i, (boxes_i, objs_i, obj_scores_i, rels_i, pred_scores_i) in enumerate(det_res):
-
-                if conf.split == 'stanford':
-                    w, h = b[i][1][0, :2]
-                    scale_gt = 1. / (BOX_SCALE / max(w, h))
-                else:
-                    scale_gt = 1.
-
-                gt_entry = {
-                    'gt_classes': val_dataset.gt_classes[batch_num + i].copy(),
-                    'gt_relations': val_dataset.relationships[batch_num + i].copy(),
-                    'gt_boxes': val_dataset.gt_boxes[batch_num + i].copy() * scale_gt,
-                }
-
-                pred_entry = {
-                    'pred_boxes': boxes_i * scale,
-                    'pred_classes': objs_i,
-                    'pred_rel_inds': rels_i,
-                    'obj_scores': obj_scores_i,
-                    'rel_scores': pred_scores_i,  # hack for now.
-                }
-                pred_entries.append(pred_entry)
-
-                for sfx in ['', '_nogc']:
-                    evaluator[eval_m + sfx].evaluate_scene_graph_entry(
-                        gt_entry,
-                        pred_entry
-                    )
-
-                if evaluator_list is not None and len(evaluator_list) > 0:
-                    eval_entry(eval_m, gt_entry, pred_entry,
-                               evaluator_list, evaluator_multiple_preds_list)
-
-            return pred_entries
-
-        except (ValueError, IndexError) as e:
-            print('no objects or relations found'.upper(), e, b[0][-1], 'trying a smaller threshold')
-
-
-def val_epoch(loader, name, n_batches=-1, is_test=False):
-    print('\nEvaluate %s %s triplets' % (name.upper(), 'test' if is_test else 'val'))
-    detector.eval()
-    evaluator, all_pred_entries, all_metrics = {}, {}, []
-    with NO_GRAD():
-        for eval_m in EVAL_MODES:
-            if eval_m == 'sgdet' and name.find('val_') >= 0:
-                continue  # skip for validation, because it takes a lot of time
-
-            print('\nEvaluating %s...' % eval_m.upper())
-
-            evaluator[eval_m] = BasicSceneGraphEvaluator(eval_m)  # graph constrained evaluator
-            evaluator[eval_m + '_nogc'] = BasicSceneGraphEvaluator(eval_m, multiple_preds=True,    # graph unconstrained evaluator
-                                                                   per_triplet=name not in ['val_zs', 'test_zs'],
-                                                                   triplet_counts=train.triplet_counts,
-                                                                   triplet2str=train_loader.dataset.triplet2str)
-
-            # for calculating recall of each relationship except no relationship
-            evaluator_list, evaluator_multiple_preds_list = [], []
-            if name not in ['val_zs', 'test_zs'] and name.find('val_') < 0:
-                for index, name_s in enumerate(train.ind_to_predicates):
-                    if index == 0:
-                        continue
-                    evaluator_list.append((index, name_s, BasicSceneGraphEvaluator.all_modes()))
-                    evaluator_multiple_preds_list.append(
-                        (index, name_s, BasicSceneGraphEvaluator.all_modes(multiple_preds=True)))
-
-
-            set_mode(detector, mode=eval_m, is_train=False, conf=conf, verbose=True)
-
-
-            # For all val/test batches
-            all_pred_entries[eval_m] = []
-            for val_b, batch in enumerate(tqdm(loader)):
-                pred_entry = val_batch(conf.num_gpus * val_b, batch, evaluator, eval_m, loader.dataset, evaluator_list, evaluator_multiple_preds_list)
-                if not conf.nosave:
-                    all_pred_entries[eval_m].extend(pred_entry)
-
-                if n_batches > -1 and val_b + 1 >= n_batches:
-                    break
-
-
-            evaluator[eval_m].print_stats()
-            evaluator[eval_m + '_nogc'].print_stats()
-
-            mean_recall = mean_recall_mp = None
-            if len(evaluator_list) > 0:
-                # Compute Mean Recall Results
-                mean_recall = calculate_mR_from_evaluator_list(evaluator_list, eval_m, save_file=None)
-                mean_recall_mp = calculate_mR_from_evaluator_list(evaluator_multiple_preds_list, eval_m,
-                                                                  multiple_preds=True, save_file=None)
-
-            if not conf.wandb_log:
-                continue
-
-            # Log using WANDB
-            eval_gc = evaluator[eval_m].result_dict
-            eval_no_gc = evaluator[eval_m + '_nogc'].result_dict
-            results_dict = {}
-            for eval_, mean_eval, sfx in zip([eval_gc, eval_no_gc], [mean_recall, mean_recall_mp], ['GC', 'NOGC']):
-                for k, v in eval_[eval_m + '_recall'].items():
-                    all_metrics.append(np.mean(v))
-                    results_dict['%s/%s_R@%i_%s' % (eval_m, name, k, sfx)] = np.mean(v)
-                if mean_eval:
-                    for k, v in mean_eval.items():
-                        results_dict['%s/%s_m%s_%s' % (eval_m, name, k, sfx)] = np.mean(v)
-
-            # Per triplet metrics
-            if name not in ['val_zs', 'test_zs']:
-                for case in ['', '_norm']:
-                    for k, v in eval_no_gc[eval_m + '_recall_triplet' + case].items():
-                        results_dict['%s/%s_R@%i_triplet%s' % (eval_m, name, k, case)] = v
-                    for metric in ['meanrank', 'medianrank'] + (['medianrankclass'] if case == '' else []):
-                        results_dict['%s/%s_%s_triplet%s' % (eval_m, name, metric, case)] = \
-                            eval_no_gc[eval_m + ('_%s_triplet' % metric) + case]
-
-            conf.wandb_log(results_dict, step=detector.global_batch_iter,
-                           is_summary=True, log_repeats=5 if is_test else 1)
-
-
-    if conf.wandb_log:
-        conf.wandb_log({'avg/%s_R' % (name): np.mean(all_metrics)}, step=detector.global_batch_iter,
-                       is_summary=True, log_repeats=5 if is_test else 1)
-
-    return all_pred_entries
-
+optimizer, scheduler = get_optim(sgg_model, conf.lr * conf.num_gpus * conf.batch_size, conf, start_epoch, ckpt)
+if conf.gan:
+    G_optimizer, D_optimizer = get_optim_gan(gan, conf, start_epoch, ckpt)
 
 print("\nTraining %s starts now!" % conf.mode.upper())
-optimizer, scheduler = get_optim(detector, conf.lr * conf.num_gpus * conf.batch_size, conf, start_epoch, ckpt)
 
 for epoch in range(start_epoch + 1, conf.num_epochs):
-    rez = train_epoch(epoch)
-    save_checkpoint(detector, optimizer, conf.save_dir, checkpoint_name,
-                    {'epoch': epoch, 'global_batch_iter': detector.global_batch_iter})
+
+    scheduler.step(epoch)  # keep here for consistency with the paper
+    train_epoch(epoch)
+
+    other_states = {'epoch': epoch, 'global_batch_iter': sgg_model.global_batch_iter}
+    if conf.gan:
+        other_states.update({'gan': gan.state_dict(),
+                             'G_optimizer': G_optimizer.state_dict(),
+                             'D_optimizer': D_optimizer.state_dict() })
+    save_checkpoint(sgg_model, optimizer, checkpoint_path, other_states)
 
     if epoch == start_epoch + 1 or (epoch % 5 == 0 and epoch < start_epoch + conf.num_epochs - 1):
         # evaluate only once in every 5 epochs since it's time consuming and evaluation is noisy
-        for loader, name in list(zip([val_loader_zs, val_loader], ['val_zs', 'val_all_large'])):
-            val_epoch(loader, name)
-
-    detector.global_batch_iter += 1  # to increase the counter for wandb
-
-    print('\nscheduler before step, epoch %d, smallest lr %f' % (epoch, get_smallest_lr(optimizer)))
-    scheduler.step(epoch)
-    print('scheduler after step, epoch %d, smallest lr %f\n' % (epoch, get_smallest_lr(optimizer)))
+        for name, loader in eval_loaders.items():
+            if name.startswith('val_'):
+                val_epoch(conf.mode, sgg_model, loader, name,
+                          train_loader.dataset.triplet_counts,
+                          train_loader.dataset.triplet2str,
+                          save_scores=conf.save_scores,
+                          predicate_weight=conf.pred_weight,
+                          train=train_loader.dataset,
+                          wandb_log=conf.wandb_log)
 
 
 # Evaluation on the test set here to make the pipeline complete
-if not conf.notest:
+if conf.notest:
+    print('evaluation on the test set is skipped due to the notest flag')
+else:
     all_pred_entries = {}
-    for loader, name in list(zip([test_loader_zs, test_loader], ['test_zs', 'test_all_large'])):
-        all_pred_entries[name] = val_epoch(loader, name, is_test=True)
-
-    if conf.nosave or len(conf.save_dir) == 0:
-        print('saving test predictions is ommitted due to the nosave argument or save_dir not specified', conf.save_dir)
-    else:
-        test_pred_f = os.path.join(conf.save_dir, 'test_predictions_%s.pkl' % conf.mode)
+    for name, loader in eval_loaders.items():
+        if name.startswith('test_'):
+            all_pred_entries[name] = val_epoch(conf.mode, sgg_model, loader, name,
+                                               train_loader.dataset.triplet_counts,
+                                               train_loader.dataset.triplet2str,
+                                               is_test=True,
+                                               save_scores=conf.save_scores,
+                                               predicate_weight=conf.pred_weight,
+                                               train=train_loader.dataset,
+                                               wandb_log=conf.wandb_log)
+    if conf.save_scores and conf.save_dir is not None:
+        test_pred_f = join(conf.save_dir, 'test_predictions_%s.pkl' % conf.mode)
         print('saving test predictions to %s' % test_pred_f)
         with open(test_pred_f, 'wb') as f:
             pickle.dump(all_pred_entries, f)
-else:
-    print('evaluation on the test set is skipped due to the notest flag')
 
 print('done!')

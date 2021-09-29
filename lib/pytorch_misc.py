@@ -2,6 +2,7 @@
 Miscellaneous functions that might be useful for pytorch
 """
 
+import random
 import h5py
 import numpy as np
 import torch
@@ -9,17 +10,20 @@ from torch.autograd import Variable
 import os
 import dill as pkl
 from itertools import tee
-from torch import nn
-from torch.nn import Parameter
 from torch import optim
 from torchvision.ops.boxes import box_iou
 
 
-def optimistic_restore(network, state_dict):
+def optimistic_restore(network, state_dict, names_map=None):
     mismatch = False
     only_detector = False
     own_state = network.state_dict()
+    state_dict_keys_new = set()
     for name_, param in state_dict.items():
+        if names_map is not None:
+            for name_old, name_new in names_map.items():
+                name_ = name_.replace(name_old, name_new)
+        state_dict_keys_new.add(name_)
         name2 = 'detector.' + name_
         if name2 in own_state and name_ not in own_state:
             name = name2
@@ -46,7 +50,7 @@ def optimistic_restore(network, state_dict):
     if only_detector:
         print('detector restored - {} success ({} keys)'.format('NOT' if mismatch else '', len(state_dict.items())))
     else:
-        missing = set(own_state.keys()) - set(state_dict.keys())
+        missing = set(own_state.keys()) - state_dict_keys_new # set(state_dict.keys())
         if len(missing) > 0:
             print("We couldn't find {}".format(','.join(missing)))
             mismatch = True
@@ -69,70 +73,160 @@ def grad_clip(detector, clip, verbose):
         max_norm=clip, verbose=verbose, clip=True)
 
 
-def set_mode(detector, mode, is_train, conf, verbose=False):
+def set_mode(sgg_model, mode, is_train, verbose=False):
     if is_train:
-        detector.train()
+        sgg_model.train()
     else:
-        detector.eval()
+        sgg_model.eval()
 
-    if conf.detector == 'mrcnn':
-        detector.detector.eval()
+    sgg_model.mode = mode
 
-    detector.mode = mode
-
-    if hasattr(detector, 'detector'):
+    if hasattr(sgg_model, 'detector'):
         m = 'refinerels' if mode == 'sgdet' else 'gtbox'
         if verbose:
             print('setting %s mode for detector' % m)
-        detector.detector.mode = m
+        sgg_model.detector.mode = m
+        # if sgg_model.backbone != 'vgg16_old':
+        #     sgg_model.detector.eval()  # Assume the detector is never trained
 
-    if hasattr(detector, 'context'):
+    if hasattr(sgg_model, 'context'):
         if verbose:
             print('setting %s mode for context' % mode)
-        detector.context.mode = mode
+        sgg_model.context.mode = mode
 
 
-def get_optim(detector, lr, conf, start_epoch, ckpt):
-    print('Effective learning rate is %f' % lr)
+def get_optim_gan(gan, conf, start_epoch, ckpt=None):
+
+    G_params = [(n, p) for n, p in gan.named_parameters() if n.startswith('G_') and p.requires_grad]
+    D_params = [(n, p) for n, p in gan.named_parameters() if n.startswith('D_') and p.requires_grad]
+    n_g = np.sum([np.prod(p[1].shape) for p in G_params])
+    n_d = np.sum([np.prod(p[1].shape) for p in D_params])
+    n_all = np.sum([np.prod(p.shape) for n, p in gan.named_parameters()])
+    print('\nG params total:', n_g)
+    print('D params total:', n_d)
+    print('All GAN params total:', n_all)
+    if n_g + n_d != n_all:
+        print('WARNING: some parameters are not trained')
+
+    # Use a separate optimizer for the generator:
+    # https://github.com/znxlwm/pytorch-generative-model-collections/blob/master/GAN.py
+    G_optimizer = optim.Adam([p[1] for p in G_params], lr=conf.lrG, betas=(conf.beta1, conf.beta2))
+    D_optimizer = optim.Adam([p[1] for p in D_params], lr=conf.lrD, betas=(conf.beta1, conf.beta2))
+
+    if start_epoch > -1 and ckpt is not None:
+        print("Restoring GAN optimizers")
+        try:
+            G_optimizer.load_state_dict(ckpt['G_optimizer'])
+        except Exception as e:
+            print('error restoring G_optimizer', e)
+        try:
+            D_optimizer.load_state_dict(ckpt['D_optimizer'])
+        except Exception as e:
+            print('error restoring D_optimizer', e)
+
+    return G_optimizer, D_optimizer
+
+
+def get_optim(detector, lr, conf, start_epoch, ckpt=None):
+    print('\nEffective learning rate is %.3e' % lr)
 
     # Lower the learning rate on the VGG fully connected layers by 1/10th. It's a hack, but it helps
     # stabilize the models.
     fc_params = [(n,p) for n,p in detector.named_parameters() if n.startswith('roi_fmap') and p.requires_grad]
     non_fc_params = [(n,p) for n, p in detector.named_parameters() if not n.startswith('roi_fmap') and p.requires_grad]
 
-    print('fc_params', [p[0] for p in fc_params])
-    print('non_fc_params', [p[0] for p in non_fc_params])
+    # print('fc_params', [p[0] for p in fc_params])
+    # print('non_fc_params', [p[0] for p in non_fc_params])
 
     params = [{'params': [p[1] for p in fc_params], 'lr': lr / 10.0 },
               {'params': [p[1] for p in non_fc_params]}]
 
     optimizer = optim.SGD(params, weight_decay=conf.l2, lr=lr, momentum=0.9)
 
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=conf.steps, gamma=conf.lr_decay)
-
-    if start_epoch > -1:
+    if start_epoch > -1 and ckpt is not None:
         print("Restoring optimizers")
         try:
             optimizer.load_state_dict(ckpt['optimizer'])
         except Exception as e:
             print('error restoring optimizer', e)
 
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer,
+                                               milestones=[s + 1 for s in conf.steps],  # +1 for consistency with the paper
+                                               gamma=conf.lr_decay)
 
     return optimizer, scheduler
 
 
-def save_checkpoint(detector, optimizer, save_dir, checkpoint_name, other_values):
+def load_checkpoint(conf, detector, checkpoint_path=None, gan=None):
+    start_epoch, ckpt = -1, None
+    detector.global_batch_iter = 0  # for wandb
+
+    checkpoint_path_load = checkpoint_path if (checkpoint_path is not None and os.path.exists(checkpoint_path)) \
+        else (conf.ckpt if len(conf.ckpt) > 0 else None)
+
+    if checkpoint_path_load is not None:
+        print("\nLoading EVERYTHING from %s" % checkpoint_path_load)
+        ckpt = torch.load(checkpoint_path_load, map_location=conf.device)
+
+        if os.path.basename(checkpoint_path_load).find('vgrel') >= 0:
+            # If there's already a checkpoint in the save_dir path, assume we should load it and continue
+            start_epoch = ckpt['epoch']
+            if not optimistic_restore(detector, ckpt['state_dict']):
+                start_epoch = -1
+            else:
+                detector.global_batch_iter = ckpt['global_batch_iter']
+                if conf.gan:
+                    assert 'gan' in ckpt, list(ckpt.keys())
+                    gan.load_state_dict(ckpt['gan'])
+                    print('GAN loaded successfully')
+
+        elif conf.backbone.startswith('vgg16'):
+            names_map = {}
+            if conf.backbone == 'vgg16':
+                names_map = {'features.': 'backbone.',
+                             'roi_fmap.0': 'roi_heads.box_head.fc6',
+                             'roi_fmap.3': 'roi_heads.box_head.fc7',
+                             'score_fc': 'roi_heads.box_predictor.cls_score',
+                             'bbox_fc': 'roi_heads.box_predictor.bbox_pred',
+                             'rpn_head.conv.0': 'rpn.head.conv',
+                             'rpn_head.conv.2': 'rpn.head.bbox_pred'}
+            optimistic_restore(detector.detector, ckpt['state_dict'], names_map=names_map)
+
+            detector.roi_fmap[1][0].weight.data.copy_(ckpt['state_dict']['roi_fmap.0.weight'])
+            detector.roi_fmap[1][3].weight.data.copy_(ckpt['state_dict']['roi_fmap.3.weight'])
+            detector.roi_fmap[1][0].bias.data.copy_(ckpt['state_dict']['roi_fmap.0.bias'])
+            detector.roi_fmap[1][3].bias.data.copy_(ckpt['state_dict']['roi_fmap.3.bias'])
+
+            detector.roi_fmap_obj[0].weight.data.copy_(ckpt['state_dict']['roi_fmap.0.weight'])
+            detector.roi_fmap_obj[3].weight.data.copy_(ckpt['state_dict']['roi_fmap.3.weight'])
+            detector.roi_fmap_obj[0].bias.data.copy_(ckpt['state_dict']['roi_fmap.0.bias'])
+            detector.roi_fmap_obj[3].bias.data.copy_(ckpt['state_dict']['roi_fmap.3.bias'])
+        elif conf.backbone == 'resnet50':
+            optimistic_restore(detector, ckpt['state_dict'])
+        else:
+            raise NotImplementedError(conf.backbone)
+        print('done')
+
+    elif conf.mode == 'sgdet' or conf.backbone.startswith('vgg16'):
+        raise ValueError('Pretrained detector should be used: use -ckpt arg to specify the path.')
+    else:
+        print('nothing to load form', conf.ckpt, checkpoint_path)
+    return start_epoch, ckpt
+
+
+def save_checkpoint(detector, optimizer, checkpoint_path, other_values=None):
+    save_dir = os.path.dirname(checkpoint_path)
     if save_dir is None or len(save_dir) == 0:
         print('skip checkpointing: save_dir is not specified', save_dir)
         return
     try:
-        checkpoint_path = os.path.join(save_dir, checkpoint_name)
         print("\nCheckpointing to %s" % checkpoint_path)
         state_dict = {
             'state_dict': detector.state_dict(),
             'optimizer': optimizer.state_dict()
         }
-        state_dict.update(other_values)
+        if other_values is not None:
+            state_dict.update(other_values)
         torch.save(state_dict, checkpoint_path)
         print('done!\n')
     except Exception as e:
@@ -145,6 +239,7 @@ def get_smallest_lr(optimizer):
         if pg['lr'] < lr_min:
             lr_min = pg['lr']
     return lr_min
+
 
 def pairwise(iterable):
     "s -> (s0,s1), (s1,s2), (s2, s3), ..."
@@ -162,6 +257,7 @@ def gather_res(outputs, target_device, dim=0):
     args = {field: Gather.apply(target_device, dim, *[getattr(o, field) for o in outputs])
             for field, v in out.__dict__.items() if v is not None}
     return type(out)(**args)
+
 
 def get_ranking(predictions, labels, num_guesses=5):
     """
@@ -183,6 +279,7 @@ def get_ranking(predictions, labels, num_guesses=5):
     guesses = full_guesses[:, :num_guesses]
     return gt_ranks, guesses
 
+
 def cache(f):
     """
     Caches a computation
@@ -200,16 +297,6 @@ def cache(f):
     return cache_wrapper
 
 
-class Flattener(nn.Module):
-    def __init__(self):
-        """
-        Flattens last 3 dimensions to make it only batch size, -1
-        """
-        super(Flattener, self).__init__()
-    def forward(self, x):
-        return x.view(x.size(0), -1)
-
-
 def to_variable(f):
     """
     Decorator that pushes all the outputs to a variable
@@ -222,6 +309,7 @@ def to_variable(f):
             return tuple([Variable(x) for x in rez])
         return Variable(rez)
     return variable_wrapper
+
 
 def arange(base_tensor, n=None):
     new_size = base_tensor.size(0) if n is None else n
@@ -246,6 +334,7 @@ def to_onehot(vec, num_classes, fill=1000):
 
     onehot_result.view(-1)[vec + num_classes*arange_inds] = fill
     return onehot_result
+
 
 def save_net(fname, net):
     h5f = h5py.File(fname, mode='w')
@@ -280,6 +369,7 @@ def batch_index_iterator(len_l, batch_size, skip_end=True):
 
     for b_start in range(0, iterate_until, batch_size):
         yield (b_start, min(b_start+batch_size, len_l))
+
 
 def batch_map(f, a, batch_size):
     """
@@ -369,11 +459,13 @@ def intersect_2d(x1, x2):
     res = (x1[..., None] == x2.T[None, ...]).all(1)
     return res
 
+
 def np_to_variable(x, is_cuda=True, dtype=torch.FloatTensor):
     v = Variable(torch.from_numpy(x).type(dtype))
     if is_cuda:
         v = v.cuda()
     return v
+
 
 def gather_nd(x, index):
     """
@@ -423,6 +515,7 @@ def diagonal_inds(tensor):
     torch.arange(0, tensor.size(0), out=arange_inds)
     return (size+1)*arange_inds
 
+
 def enumerate_imsize(im_sizes):
     s = 0
     for i, (h, w, scale, num_anchors) in enumerate(im_sizes):
@@ -431,6 +524,7 @@ def enumerate_imsize(im_sizes):
         yield i, s, e, h, w, scale, na
 
         s = e
+
 
 def argsort_desc(scores):
     """
@@ -450,11 +544,13 @@ def unravel_index(index, dims):
         index_cp /= d
     return torch.cat([x[:,None] for x in unraveled[::-1]], 1)
 
+
 def de_chunkize(tensor, chunks):
     s = 0
     for c in chunks:
         yield tensor[s:(s+c)]
         s = s+c
+
 
 def random_choose(tensor, num, p=None):
     "randomly choose indices"
@@ -525,6 +621,7 @@ def right_shift_packed_sequence_inds(lengths):
         cur_ind += l1
     return inds
 
+
 def clip_grad_norm(named_parameters, max_norm, clip=False, verbose=False):
     r"""Clips gradient norm of an iterable of parameters.
 
@@ -566,10 +663,20 @@ def clip_grad_norm(named_parameters, max_norm, clip=False, verbose=False):
 
     return total_norm
 
+
 def update_lr(optimizer, lr=1e-4):
     print("------ Learning rate -> {}".format(lr))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
+
+def set_seed(seed):
+    # Set seed everywhere
+    random.seed(seed)  # for some libraries
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 class Result(object):

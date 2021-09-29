@@ -1,11 +1,10 @@
-from lib.pytorch_misc import enumerate_by_image, gather_nd, random_choose
 import torch
-from lib.pytorch_misc import diagonal_inds, to_variable
+from lib.pytorch_misc import enumerate_by_image, diagonal_inds, to_variable, random_choose
 from config import REL_FG_FRACTION
 
 
 @to_variable
-def proposal_assignments_gtbox(rois, gt_boxes, gt_classes, gt_rels, image_offset, RELS_PER_IMG, fg_thresh=0.5, sample_factor=-1):
+def proposal_assignments_gtbox(rois, gt_boxes, gt_classes, gt_rels, image_offset, RELS_PER_IMG, sample_factor=-1):
     """
     Assign object detection proposals to ground-truth targets. Produces proposal
     classification labels and bounding-box regression targets.
@@ -41,7 +40,8 @@ def proposal_assignments_gtbox(rois, gt_boxes, gt_classes, gt_rels, image_offset
 
     # NOW WE HAVE TO EXCLUDE THE FGs.
     is_cand.view(-1)[fg_rels[:,1]*im_inds.size(0) + fg_rels[:,2]] = 0
-    is_bgcand = is_cand.nonzero()
+    is_bgcand = torch.nonzero(is_cand)
+
     # TODO: make this sample on a per image case
     # If too many then sample
     num_fg = min(fg_rels.size(0), int(RELS_PER_IMG * REL_FG_FRACTION * num_im))

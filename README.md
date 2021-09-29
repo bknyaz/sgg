@@ -4,22 +4,43 @@
 |:-------------------------:|:-------------------------:|:-------------------------:|
 | <figure> <img src="figs/2320504_ours_zs_ours.png" height="200"></figure> |  <figure> <img src="figs/2320504_ours_zs_graph_gt.png" height="200"><figcaption></figcaption></figure> | <figure> <img src="figs/2320504_ours_zs_graph_ours.png" height="200"><figcaption></figcaption></figure> |
 
-In this visualization, `woman sitting on rock` is a **zero-shot** triplet, which means that the combination of `woman`, `sitting on` and `rock` has never been observed during training. However, each of the object and predicate has been observed, but together with other objects and predicate. For example, `woman sitting on chair` has been observed and is not a zero-shot triplet. Making correct predictions for zero-shots is very challenging, so in our paper we address this problem and improve zero-shot as well as few-shot results.
+In this visualization, `woman sitting on rock` is a **zero-shot** triplet, which means that the combination of `woman`, `sitting on` and `rock` has never been observed during training. However, each of the object and predicate has been observed, but together with other objects and predicate. For example, `woman sitting on chair` has been observed and is not a zero-shot triplet. Making correct predictions for zero-shots is very challenging, so in our papers [1,2] we address this problem and improve zero-shot as well as few-shot results. See examples of zero-shots in the Visual Genome (VG) dataset at [Zero_Shot_VG.ipynb](Zero_Shot_VG.ipynb).
 
 
-This code accompanies our paper [Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky. "Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation"](https://arxiv.org/search/cs?searchtype=author&query=Knyazev%2C+B)
+This repository accompanies two papers: 
+
+- [1] [Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky. "Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation", **BMVC 2020**](https://arxiv.org/abs/2005.08230)
+
+- [2] [Boris Knyazev, Harm de Vries, Cătălina Cangea, Graham W. Taylor, Aaron Courville, Eugene Belilovsky. "Generative Compositional Augmentations for Scene Graph Prediction", **ICCV 2021**](https://arxiv.org/abs/2007.05756)
 
 
-To run our experiments we used amazing [Rowan Zellers' code for Neural Motifs](https://github.com/rowanz/neural-motifs). Its only problem is the difficult to be run in PyTorch > 0.3, making it hard to use it on some recent GPUs.
+See the code for my another ICCV 2021 paper [Context-aware Scene Graph Generation with Seq2Seq Transformers](http://www.cs.utoronto.ca/~mvolkovs/ICCV2021_Transformer_SGG.pdf) at https://github.com/layer6ai-labs/SGG-Seq2Seq.
 
-So, in this repo, I provide a cleaned-up version that can be run in PyTorch 1.2 or later. The code is based on Mask R-CNN built-in in recent PyTorch.
-It should be possible to reproduce our GQA results using this code.
 
-**This code does not require building or manually downloading anything in advance**. Training the Scene Graph Classification (SGCls) model with our loss on Visual Genome is as easy as running this command:
+The code in this repo is based on the amazing [code for Neural Motifs by Rowan Zellers](https://github.com/rowanz/neural-motifs). Our code uses `torchvision.models.detection`, so can be run in PyTorch 1.2 or later.
 
-`python main.py -data data_path -loss dnorm`
+# Requirements
 
-The script will automatically download all data and create the following directories (make sure you have at least 30GB of disk space in `data_path`):
+- Python >= 3.6
+- PyTorch >= 1.2
+- Other standard Python libraries
+
+Should be enough to install these libraries (in addition to PyTorch):
+```
+conda install -c anaconda h5py cython dill pandas
+conda install -c conda-forge pycocotools tqdm
+```
+
+Results in our papers [1,2] were obtained on a single GPU 1080Ti/2080Ti/RTX6000 with 11-24GB of GPU memory and 32GB of RAM. MultiGPU training is unfortunately not supported in this repo.
+
+To use the edge feature model from Rowan Zellers' model implementations (default argument `-edge_model motifs` in our code), it is necessary to build the following function:
+
+`cd lib/draw_rectangles; python setup.py build_ext --inplace; cd ..`
+
+
+# Data
+
+Visual Genome or GQA data will be automatically downloaded after the first call of `python main.py -data $data_path`. After downloading, the script will generate the following directories (make sure you have at least 60GB of disk space in `$data_path`):
 
 ```
 data_path
@@ -28,131 +49,112 @@ data_path
 │   │   VG_100K (this will appear after extracting VG.tar)
 │   │   ...
 │
-└───GQA
+└───GQA # optional
 │   │   GQA_scenegraphs.tar
 │   │   sceneGraphs (this will appear after extracting GQA_scenegraphs.tar)
 |   |   ...
 ```
 
-To run it on GQA, use:
+If downloading fails, you can download manually using the links from [lib/download.py](lib/download.py). Alternatively, the VG can be downloaded following [Rowan Zellers' instructions](https://github.com/rowanz/neural-motifs), while GQA can be downloaded from the [GQA official website](https://cs.stanford.edu/people/dorarad/gqa/about.html).
+ 
+To train SGG models on VG, download [Rowan Zellers' VGG16 detector checkpoint](https://drive.google.com/open?id=11zKRr2OF5oclFL47kjFYBOxScotQzArX) and save it as `./data/VG/vg-faster-rcnn.tar`.
 
-`python main.py -data data_path -loss dnorm -split gqa -lr 0.002`
+To train our GAN models from [2], it is necessary to first extract and save real object features from the training set of VG by running:
 
-Checkpoints and predictions will be saved locally in `./results`. This can be changed by the `-save_dir` flag. See examples below.
+`python extract_features.py -data ./data/ -ckpt ./data/VG/vg-faster-rcnn.tar -save_dir ./data/VG/`
 
-**This repository is still in progress, please report any issues.**
-
-## Requirements
-
-- Python > 3.5
-- PyTorch >= 1.2
-- Other standard libraries
-
-Should be enough to install these libraries (in addition to PyTorch):
-```
-conda install -c anaconda h5py cython dill pandas
-conda install -c conda-forge pycocotools tqdm
-```
-
-Results in this repo were obtained on a single GPU 1080/2080 Ti, up to 11GB of GPU memory and 32GB of RAM was required.
-
-## TODO
-
-- [x] Message Passing with Mask R-CNN
-- [x] Automatically download all files required to run the code
-- [x] Obtain SGCls/PredCls results on VG and GQA
-- [x] Obtain SGGen results on VG and GQA
-- [ ] Add trained checkpoints and the script to visualize scene graph generation using the trained checkpoint on VG and GQA
+The script will generate `./data/VG/features.hdf5` of around 30GB.
 
 
-## VG Results
 
-Results here are obtained using Mask R-CNN with ResNet-50 as a backbone, while in the paper we used Faster R-CNN with VGG16 as a backbone. We also skip a refinement step in this repo, which is usually required to improve SGGen results. Hence there's some difference in results from the paper. See full details in the paper. 
+# Visual Genome (VG)
 
-| Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
-|:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
-| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on COCO | 47.1 | 7.8 | 74.5 | 23.5 |
-| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on COCO |47.4 | 9.0 | 75.4 | 27.3
-| D-norm (ours), paper | Faster R-CNN (VGG16) pretrained on VG |48.6 | 9.1 | 78.2 | 28.4
+## SGCls/PredCls
 
-<sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -save_dir VG_sgcls`
+Below are the commands to train different SGG models from our papers:
 
-Or download our [VG-SGCls-1 checkpoint](https://drive.google.com/file/d/1m-_fvznwDgqhKzMYL15HcZIy2qi38U5X/view?usp=sharing)
+- IMP+ from [IMP](https://arxiv.org/abs/1701.02426) / [Neural Motifs](https://arxiv.org/abs/1711.06640):
+`python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_baseline -loss baseline -b 24`
 
-### Scene Graph Generation on VG
+- IMP++ from [our BMVC 2020](https://arxiv.org/abs/2005.08230):
+`python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_dnorm -loss dnorm -b 24`
 
-| Loss | Detector |  SGGen-R@100 |  SGGen-R_ZS@100 | SGGen-mR@100
-|:-----|:-----:|:-----:|:-----:|:-----:|
-| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on VG | 26.4 | 1.0 | 6.3
-| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on VG | 26.5 | 1.4 | 9.5
-| D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on VG | 28.2 | 1.2 | 9.5
+- IMP++ with GAN from [our ICCV 2021](https://arxiv.org/abs/2007.05756): `python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_GAN -loss dnorm -b 24 -gan -largeD -vis_cond ./data/VG/features.hdf5`
 
-<sup>‡</sup> Steps to reproduce the results above:
-1. Fine-tune Mask R-CNN on VG:
-`python pretrain_detector.py stanford data_path ./pretrain_VG`  # takes about 1 day
-
-Or download our [VG-detector checkpoint](https://drive.google.com/file/d/1XtlObixHaLokoQx9VX9r4a-Nx5jxR63i/view?usp=sharing)
-
-2. Train SGCls:
-`python main.py -data data_path -loss dnorm -ckpt pretrain_VG/gqa_maskrcnn_res50fpn.pth -save_dir VG_sgdet`   # takes about 1 day
-
-Or download our [VG-SGCls-2 checkpoint](https://drive.google.com/file/d/1cE8hOi2YqXgXprY44thlxKujMgtWggHe/view?usp=sharing)
-This checkpoint is different from VG-SGCls-1, because here the model is trained on the features of the VG-pretrained detector. This checkpoint can be used in the next step.
-
-3. Evaluate SGGen:
-`python main.py -data data_path -ckpt ./VG_sgdet/vgrel.pth -m sgdet -nepoch 0`  # takes a couple hours
+- IMP++ with GAN and StructN scene graph perturbations (`a=2`) from [our ICCV 2021](https://arxiv.org/abs/2007.05756): `python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_GAN_structn -loss dnorm -b 24 -gan -largeD -vis_cond ./data/VG/features.hdf5 -perturb structn -L 0.2 -topk 5 -structn_a 2`
 
 
-## GQA Results
+Checkpoints will be saved locally in `-save_dir`.
 
-In this repo, I am using a slightly different edge model in [UnionBoxesAndFeats](lib/get_union_boxes.py) to avoid building code and simplify the pipeline. This can contribute to the difference. Using [Neural Motifs's](https://github.com/rowanz/neural-motifs) edge model should lead to more similar results.
+Evaluation on the VG test set will be run at the end of the training script. To re-run evaluation: `python main.py -data ./data -ckpt ./results/IMP_GAN_structn/vgrel.pth -pred_weight $x`, where `$x` is the weight for rare predicate classes, which is 1 for default, but can be increased to improve certain metrics like mean recall (see the Appendix in our paper [2] for more details).
 
-| Loss | Detector |  SGCls-R@100 |  SGCls-R_ZS@100 | PredCls-R@50 | PredCls-R_ZS@50
-|:-----|:-----:|:-----:|:-----:|:-----:|:-----:|
-| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on COCO | 27.1 | 2.9 | 58.4 | 33.1 |
-| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on COCO |27.4 | 3.1 | 59.6 | 36.0
-| D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on COCO | 27.6 | 3.0 | 61.0 | 37.2
+## Generated Feature Quality
 
-<sup>‡</sup> Can be reproduced by running: `python main.py -data data_path -loss dnorm -split gqa -lr 0.002 -save_dir GQA_sgcls`  # takes about 1 day
+To inspect the features generated with GANs, it is necessary to first extract and save node/edge/global features. This can be done similarly to the code in `extract_features.py`, but replacing the real features with the ones produced by the GAN.
 
-Or download our [GQA-SGCls-1 checkpoint](https://drive.google.com/file/d/1ktyV7atNRIS0UhiQOoPCR_392FQz6eB6/view?usp=sharing)
+See [this jupyter notebook to inspect generated feature quality](GAN_features.ipynb).
 
-### Scene Graph Generation on GQA
+## Scene Graph Perturbations
 
-| Loss | Detector |  SGGen-R@300 |  SGGen-R_ZS@300 | SGGen-mR@300
-|:-----|:-----:|:-----:|:-----:|:-----:|
-| Baseline, this repo | Mask R-CNN (ResNet-50) pretrained on GQA | 6.2 | 0.5 | 1.3
-| D-norm (ours), this repo<sup>‡</sup> | Mask R-CNN (ResNet-50) pretrained on GQA | 6.3 | 0.7 | 2.4
-| D-norm (ours), paper | Mask R-CNN (ResNet-50) pretrained on GQA | 4.6 | 0.4 | 2.0
+See [this jupyter notebook to inspect scene graph perturbation methods](Scene_Graph_Perturbations_VG.ipynb).
 
-<sup>‡</sup> Steps to reproduce the results above:
+
+## SGGen (optional)
+
+Please follow the details in our papers to obtain SGGen/SGDet results, which are based on using the original Neural Motifs code.
+
+Pull-requests to add training and evaluation SGGen/SGDet models with the VGG16 or another backbone are welcome.
+
+
+# GQA
+
+**Note: these instructions are for our BMVC 2020 paper [1] and have not been tested in the last version of the repo**
+
+## SGCls/PredCls
+ 
+To train an SGCls/PredCls model with our loss on GQA: `python main.py -data ./data -loss dnorm -split gqa -lr 0.002 -save_dir ./results/GQA_sgcls`  # takes about 1 day. Or download our [GQA-SGCls-1 checkpoint](https://drive.google.com/file/d/1ktyV7atNRIS0UhiQOoPCR_392FQz6eB6/view?usp=sharing)
+
+In the trained checkpoints of this repo I used a slightly different edge model in [UnionBoxesAndFeats](lib/get_union_boxes.py) `-edge_model raw_boxes`. To use [Neural Motifs's](https://github.com/rowanz/neural-motifs) edge model, use flag `-edge_model motifs` (default in the current version of the repo).
+
+## SGGen (optional)
+
+Follow these steps to train and evaluate an SGGen model on GQA:
 
  1. Fine-tune Mask R-CNN on GQA:
-`python pretrain_detector.py gqa data_path ./pretrain_GQA`  # takes about 1 day
-
-Or download our [GQA-detector checkpoint](https://drive.google.com/file/d/1VR8uMR0WMbqiA2hPIxq7AzvpNqzzyKfT/view?usp=sharing)
+`python pretrain_detector.py gqa ./data ./results/pretrain_GQA`  # takes about 1 day. Or download our [GQA-detector checkpoint](https://drive.google.com/file/d/1VR8uMR0WMbqiA2hPIxq7AzvpNqzzyKfT/view?usp=sharing)
 
 2. Train SGCls:
-`python main.py -data data_path -lr 0.002 -split gqa -nosave -loss dnorm -ckpt pretrain_GQA/gqa_maskrcnn_res50fpn.pth -save_dir GQA_sgdet`   # takes about 1 day
-
-Or download our [GQA-SGCls-2 checkpoint](https://drive.google.com/file/d/1wldE-ONCs15balmR1IdZvnD2byZ8dNB7/view?usp=sharing)
-This checkpoint is different from SGCls-1, because here the model is trained on the features of the GQA-pretrained detector.
+`python main.py -data ./data -lr 0.002 -split gqa -nosave -loss dnorm -ckpt ./results/pretrain_GQA/gqa_maskrcnn_res50fpn.pth -save_dir ./results/GQA_sgdet`   # takes about 1 day. Or download our [GQA-SGCls-2 checkpoint](https://drive.google.com/file/d/1wldE-ONCs15balmR1IdZvnD2byZ8dNB7/view?usp=sharing). This checkpoint is different from SGCls-1, because here the model is trained on the features of the GQA-pretrained detector.
 This checkpoint can be used in the next step.
 
 3. Evaluate SGGen:
-`python main.py -data data_path -split gqa -ckpt ./GQA_sgdet/vgrel.pth -m sgdet -nosave -nepoch 0`  # takes a couple hours
+`python main.py -data ./data -split gqa -ckpt ./results/GQA_sgdet/vgrel.pth -m sgdet -nosave -nepoch 0`  # takes a couple hours
 
-## Scene Graph Visualizations
+## Visualizations
+
+See an example of detecting objects and obtaining scene graphs for GQA test images at [Scene_Graph_Predictions_GQA.ipynb](Scene_Graph_Predictions_GQA.ipynb).
+
 
 ## Citation
 
-Please use this citation if you want to cite our paper:
+Please use these references to cite our papers or code:
 
 ```
-@article{knyazev2020graphdensity,
+@inproceedings{knyazev2020graphdensity,
   title={Graph Density-Aware Losses for Novel Compositions in Scene Graph Generation},
   author={Knyazev, Boris and de Vries, Harm and Cangea, Cătălina and Taylor, Graham W and Courville, Aaron and Belilovsky, Eugene},
-  journal={arXiv preprint arXiv:2005.08230},
+  booktitle={British Machine Vision Conference (BMVC)},
+  pdf={http://arxiv.org/abs/2005.08230},
   year={2020}
+}
+```
+
+```
+@inproceedings{knyazev2020generative,
+  title={Generative Compositional Augmentations for Scene Graph Prediction},
+  author={Boris Knyazev and Harm de Vries and Cătălina Cangea and Graham W. Taylor and Aaron Courville and Eugene Belilovsky},
+  booktitle={International Conference on Computer Vision (ICCV)},
+  pdf={https://arxiv.org/abs/2007.05756},
+  year={2021}
 }
 ```

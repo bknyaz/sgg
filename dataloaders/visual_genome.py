@@ -8,6 +8,7 @@ import os
 import h5py
 import numpy as np
 import torch
+import copy
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Resize, Compose, ToTensor, Normalize
@@ -31,9 +32,9 @@ class VG(Dataset):
 
     def __init__(self, mode, data_dir, filter_empty_rels=True, num_im=-1, num_val_im=5000,
                  filter_duplicate_rels=True, filter_non_overlap=True,
-                 max_graph_size=-1, min_graph_size=-1,
-                 mrcnn=False,
-                 device='cuda',
+                 min_graph_size=-1, max_graph_size=-1,
+                 torch_detector=False, n_shots=-1,
+                 square_pad=True,
                  training_triplets=None, exclude_left_right=False):
         """0
         Torch dataset for VisualGenome
@@ -51,15 +52,15 @@ class VG(Dataset):
             proposals
         """
 
+        # print(mode, VG.split, data_dir, num_im, num_val_im, torch_detector, min_graph_size, max_graph_size, n_shots)
 
-        if mode not in ('test', 'train', 'val'):
-            raise ValueError("Mode must be in test, train, or val. Supplied {}".format(mode))
+        assert mode in ('test', 'train', 'val'), '%s mode not recognized' % mode
         self.mode = mode
-        self.is_cuda = device.find('cuda') >= 0
         self.max_graph_size = max_graph_size if mode == 'train' else -1
         self.min_graph_size = min_graph_size if mode == 'train' else -1
         self.filter_non_overlap = filter_non_overlap
         self.filter_duplicate_rels = filter_duplicate_rels and self.mode == 'train'
+        self.n_shots = n_shots
         assert VG.split in ['stanford', 'vte', 'gqa'], ('invalid split', VG.split)
 
         if training_triplets:
@@ -79,7 +80,8 @@ class VG(Dataset):
                 filter_non_overlap=self.filter_non_overlap and self.is_train,
                 training_triplets=training_triplets,
                 random_subset=False,
-                filter_zeroshots=True
+                filter_zeroshots=True,
+                n_shots=n_shots
             )
         elif VG.split == 'vte':
             data_name = 'VG'
@@ -161,6 +163,8 @@ class VG(Dataset):
         else:
             raise NotImplementedError(VG.split)
 
+        self.root = os.path.join(data_dir, data_name)
+
         if VG.split == 'stanford':
             self.filenames = load_image_filenames(self.image_file, self.images_dir) if VG.filenames is None else VG.filenames
             self.ind_to_classes, self.ind_to_predicates = load_info(self.dict_file)
@@ -172,9 +176,9 @@ class VG(Dataset):
         if VG.filenames is None:
             VG.filenames = self.filenames
 
-        if self.mode == 'train':
-            print('\nind_to_classes', len(self.ind_to_classes), self.ind_to_classes)
-            print('\nind_to_predicates', len(self.ind_to_predicates), self.ind_to_predicates, '\n')
+        # if self.mode == 'train':
+        #     print('\nind_to_classes', len(self.ind_to_classes), self.ind_to_classes)
+        #     print('\nind_to_predicates', len(self.ind_to_predicates), self.ind_to_predicates, '\n')
 
         self.triplet_counts = {}
         # c = 0
@@ -191,12 +195,9 @@ class VG(Dataset):
                 o1, o2, R = tri
                 tri_str = '{}_{}_{}'.format(self.gt_classes[im][o1], R, self.gt_classes[im][o2])
 
-                # if training_triplets and not random_subset and filter_zeroshots:
-                #     assert tri_str not in training_triplets, (mode, len(training_triplets), tri_str, tri)
-                    # tri_names = self.triplet2str(tri_str)
-                    # if tri_names.startswith('cup_') and c < 10:
-                    #     print('cup', tri_names)
-                    #     c += 1
+                if training_triplets:
+                    if isinstance(training_triplets, dict):
+                        assert tri_str in training_triplets and training_triplets[tri_str] <= self.n_shots, (mode, len(training_triplets), tri_str, training_triplets[tri_str], self.n_shots)
 
                 if tri_str not in self.triplet_counts:
                     self.triplet_counts[tri_str] = 0
@@ -207,25 +208,41 @@ class VG(Dataset):
         # self.triplets = list(self.triplet_counts.keys())
         counts = list(self.triplet_counts.values())
 
-        print('{}-{}: Total {} images (mask {}/{}), {} triplets ({} unique triplets), min/max triplet counts: {}/{}'.format(
-            VG.split,
-            mode,
+        if mode == 'train':
+            self.subj_pred_pairs, self.pred_obj_pairs = {}, {}
+            for im in range(len(self.gt_classes)):
+                for rel_ind, tri in enumerate(self.relationships[im]):
+                    o1, o2, R = tri
+                    tri_str = '{}_{}_{}'.format(self.gt_classes[im][o1], R, self.gt_classes[im][o2])
+                    pair = '{}_{}'.format(self.gt_classes[im][o1], R)  # man wearing
+                    if pair not in self.subj_pred_pairs:
+                        self.subj_pred_pairs[pair] = {}
+                    self.subj_pred_pairs[pair][self.gt_classes[im][o2]] = self.triplet_counts[tri_str]
+
+                    pair = '{}_{}'.format(R, self.gt_classes[im][o2])  # on surfboard
+                    if pair not in self.pred_obj_pairs:
+                        self.pred_obj_pairs[pair] = {}
+                    self.pred_obj_pairs[pair][self.gt_classes[im][o1]] = self.triplet_counts[tri_str]
+
+            print('subj_pred_pairs, pred_obj_pairs', len(self.subj_pred_pairs), len(self.pred_obj_pairs))
+
+        print('{} images, {} triplets ({} unique triplets)'.format(
+            # VG.split,
+            # mode,
             len(self.gt_classes),
-            np.sum(self.split_mask),
-            len(self.split_mask),
+            # np.sum(self.split_mask),
+            # len(self.split_mask),
             np.sum(counts),  # total count
-            len(self.triplet_counts),  # unique
-            np.min(counts), np.max(counts)))
+            len(self.triplet_counts)))  # unique
+            # np.min(counts), np.max(counts)))
 
         def stats(x):
-            return 'min={:.3f}, max={:.3f}, mean={:.3f}, std={:.3f}'.format(np.min(x), np.max(x), np.mean(x), np.std(x))
+            return 'min={:.1f}, max={:.1f}, mean={:.1f}, std={:.1f}'.format(np.min(x), np.max(x), np.mean(x), np.std(x))
 
-        print('Stats: {} objects ({:.2f} avg, {}), {} FG edges ({:.2f} avg, {}), {} BG edges ({:.2f} avg), density {}'.format(
+        print('Stats: {} objects ({}), {} FG edges ({}), {} BG edges ({:.2f} avg), graph density {}'.format(
             N_total,
-            N_total / n_samples,
             str(stats(n_obj_lst)),
             M_FG_total,
-            M_FG_total / n_samples,
             str(stats(fg_lst)),
             M_BG_total,
             M_BG_total / n_samples,
@@ -235,38 +252,24 @@ class VG(Dataset):
 
         self.filenames = [self.filenames[i] for i in np.where(self.split_mask)[0]]
 
-        if self.mode == 'train':
-            print('example of triplets')
-            for tri in list(self.triplet_counts.keys())[:5]:
-                print(tri, self.triplet2str(tri), self.triplet_counts[tri])
+        # if self.mode == 'train':
+        #     print('example of triplets')
+        #     for tri in list(self.triplet_counts.keys())[:5]:
+        #         print(tri, self.triplet2str(tri), self.triplet_counts[tri])
 
-        # self.triplets = set(self.triplets)  # for faster checking membership
         self.rpn_rois = None
 
-        # You could add data augmentation here. But we didn't.
-        # tform = []
-        # if self.is_train:
-        #     tform.append(RandomOrder([
-        #         Grayscale(),
-        #         Brightness(),
-        #         Contrast(),
-        #         Sharpness(),
-        #         Hue(),
-        #     ]))
-        self.mrcnn = mrcnn
-        if mrcnn:
-            tform = [
-                ToTensor()
-            ]
+        self.torch_detector = torch_detector
+
+        tform = [SquarePad()] if square_pad else []
+        if torch_detector:
+            tform += [ToTensor()]
         else:
-            tform = [
-                SquarePad(),
+            tform += [
                 Resize(IM_SCALE),
                 ToTensor(),
                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ]
-
-        print('Image transformations', tform)
 
         self.transform_pipeline = Compose(tform)
 
@@ -313,13 +316,15 @@ class VG(Dataset):
     @classmethod
     def splits(cls, *args, **kwargs):
         """ Helper method to generate splits of the dataset"""
+
+        print('\nLoading the %s split of Visual Genome' % VG.split.upper())
         print('\nTRAIN DATASET')
         train = cls('train', *args, **kwargs)
 
-        print('\nVAL DATASET (ALL)')
-        val = cls('val', *args, **kwargs)
-
-        if kwargs['min_graph_size'] > -1 or kwargs['max_graph_size'] > -1 or train.filter_non_overlap:
+        if ('min_graph_size' in kwargs and kwargs['min_graph_size'] > -1) or \
+                ('max_graph_size' in kwargs and kwargs['max_graph_size'] > -1) \
+                or train.filter_non_overlap:
+            print('loading the original training split first')
             kwargs['min_graph_size'] = -1
             kwargs['max_graph_size'] = -1
             kwargs['filter_non_overlap'] = False
@@ -328,29 +333,46 @@ class VG(Dataset):
         else:
             train_orig = train
 
-        print('\nVAL DATASET (ZERO SHOTS)')
-        val_zs = cls('val', *args, **kwargs, training_triplets=set(list(train_orig.triplet_counts.keys())))
+        eval_splits = {}
+        print('\nVAL DATASET (ZERO-SHOTS)')
+        eval_splits['val_zs'] = cls('val', *args, **kwargs, training_triplets=set(list(train_orig.triplet_counts.keys())))
 
-        print('\nTEST DATASET (ALL)')
-        test = cls('test', *args, **kwargs)
-        n_img = {'stanford': 26446, 'vte': 25851, 'gqa': 10055}
-        assert len(test) == n_img[VG.split], (len(test), VG.split)
+        print('\nVAL DATASET (ALL-SHOTS)')
+        eval_splits['val_alls'] = cls('val', *args, **kwargs)
 
         print('\nTEST DATASET (ZERO SHOTS)')
-        test_zs = cls('test', *args, **kwargs, training_triplets=set(list(train_orig.triplet_counts.keys()) + list(val.triplet_counts.keys())))
+        eval_splits['test_zs'] = cls('test', *args, **kwargs,
+                      training_triplets=set(list(train_orig.triplet_counts.keys()) + list(eval_splits['val_alls'].triplet_counts.keys())))
         n_img = {'stanford': 4519, 'vte': 653, 'gqa': 6418}
-        assert len(test_zs) == n_img[VG.split], (len(test_zs), VG.split)
+        assert len(eval_splits['test_zs']) == n_img[VG.split], (len(eval_splits['test_zs']), VG.split)
 
-        return train, [val, val_zs, test, test_zs]
+        if VG.split == 'stanford':
+            # TODO: extend for other splits like GQA
 
+            print('\nTEST DATASET (10-SHOTS)')
+            triplet_counts = copy.deepcopy(train_orig.triplet_counts)
+            for k, v in eval_splits['val_alls'].triplet_counts.items():
+                if k not in triplet_counts:
+                    triplet_counts[k] = 0
+                triplet_counts[k] += v
+            eval_splits['test_10s'] = cls('test', *args, **kwargs, training_triplets=triplet_counts, n_shots=10)
+            n_img = {'stanford': 9602, 'vte': -1, 'gqa': -1}
+            if VG.split == 'stanford':
+                assert len(eval_splits['test_10s']) == n_img[VG.split], (len(eval_splits['test_10s']), VG.split)
 
-    def prepare_batch_img(self, index):
-        data = self[index]
-        blob = Blob(mode='rel', is_train=True, num_gpus=1, batch_size_per_gpu=1, mrcnn=self.mrcnn,
-                    is_cuda=self.is_cuda)
-        blob.append(data)
-        blob.reduce()
-        return blob
+            print('\nTEST DATASET (100-SHOTS)')
+            eval_splits['test_100s'] = cls('test', *args, **kwargs, training_triplets=triplet_counts, n_shots=100)
+            n_img = {'stanford': 16528, 'vte': -1, 'gqa': -1}
+            if VG.split == 'stanford':
+                assert len(eval_splits['test_100s']) == n_img[VG.split], (len(eval_splits['test_100s']), VG.split)
+
+        print('\nTEST DATASET (ALL-SHOTS)')
+        eval_splits['test_alls'] = cls('test', *args, **kwargs)
+        n_img = {'stanford': 26446, 'vte': 25851, 'gqa': 10055}
+        assert len(eval_splits['test_alls']) == n_img[VG.split], (len(eval_splits['test_alls']), VG.split)
+
+        return train, eval_splits
+
 
     def __getitem__(self, index):
         image_unpadded = Image.open(os.path.join(self.images_dir, self.filenames[index])).convert('RGB')
@@ -360,7 +382,7 @@ class VG(Dataset):
         gt_boxes = self.gt_boxes[index].copy()
         w, h = image_unpadded.size
 
-        if self.mrcnn:
+        if self.torch_detector:
             im_scale = max(w, h)
             box_scale = im_scale
         else:
@@ -371,12 +393,12 @@ class VG(Dataset):
 
         if VG.split in ['vte', 'gqa']:
             gt_boxes = gt_boxes * box_scale_factor  # multiply bbox by this number to make them BOX_SCALE
-        elif self.mrcnn:
+        elif self.torch_detector:
             # make the boxes at image scale
             s = BOX_SCALE / max(w, h)
             gt_boxes = gt_boxes / s
 
-        if self.mrcnn:
+        if self.torch_detector:
             assert box_scale_factor == 1, box_scale_factor
 
         # crop boxes that are too large. This seems to be only a problem for image heights, but whatevs
@@ -492,7 +514,7 @@ def load_image_filenames(image_file, image_dir):
 
 
 def load_graphs(graphs_file, mode='train', num_im=-1, num_val_im=0, filter_empty_rels=True, min_graph_size=-1, max_graph_size=-1,
-                filter_non_overlap=False, training_triplets=None, random_subset=False, filter_zeroshots=True):
+                filter_non_overlap=False, training_triplets=None, random_subset=False, filter_zeroshots=True, n_shots=-1):
     """
     Load the file containing the GT boxes and relations, as well as the dataset split
     :param graphs_file: HDF5
@@ -511,49 +533,49 @@ def load_graphs(graphs_file, mode='train', num_im=-1, num_val_im=0, filter_empty
     if mode not in ('train', 'val', 'test'):
         raise ValueError('{} invalid'.format(mode))
 
-    roi_h5 = h5py.File(graphs_file, 'r')
-    data_split = roi_h5['split'][:]
-    split = 2 if mode == 'test' else 0
-    split_mask = data_split == split
+    with h5py.File(graphs_file, 'r') as roi_h5:
+        data_split = roi_h5['split'][:]
+        split = 2 if mode == 'test' else 0
+        split_mask = data_split == split
 
-    # Filter out images without bounding boxes
-    split_mask &= roi_h5['img_to_first_box'][:] >= 0
-    if filter_empty_rels:
-        split_mask &= roi_h5['img_to_first_rel'][:] >= 0
+        # Filter out images without bounding boxes
+        split_mask &= roi_h5['img_to_first_box'][:] >= 0
+        if filter_empty_rels:
+            split_mask &= roi_h5['img_to_first_rel'][:] >= 0
 
-    image_index = np.where(split_mask)[0]
-    if num_im > -1:
-        image_index = image_index[:num_im]
-    if num_val_im > 0:
-        if mode in ['val']:  # , 'test' for faster preliminary evaluation on the test set
-            image_index = image_index[:num_val_im]
-        elif mode == 'train':
-            image_index = image_index[num_val_im:]
+        image_index = np.where(split_mask)[0]
+        if num_im > -1:
+            image_index = image_index[:num_im]
+        if num_val_im > 0:
+            if mode in ['val']:  # , 'test' for faster preliminary evaluation on the test set
+                image_index = image_index[:num_val_im]
+            elif mode == 'train':
+                image_index = image_index[num_val_im:]
 
 
-    split_mask = np.zeros_like(data_split).astype(bool)
-    split_mask[image_index] = True
+        split_mask = np.zeros_like(data_split).astype(bool)
+        split_mask[image_index] = True
 
-    # Get box information
-    all_labels = roi_h5['labels'][:, 0]
-    all_boxes = roi_h5['boxes_{}'.format(BOX_SCALE)][:]  # will index later
-    assert np.all(all_boxes[:, :2] >= 0)  # sanity check
-    assert np.all(all_boxes[:, 2:] > 0)  # no empty box
+        # Get box information
+        all_labels = roi_h5['labels'][:, 0]
+        all_boxes = roi_h5['boxes_{}'.format(BOX_SCALE)][:]  # will index later
+        assert np.all(all_boxes[:, :2] >= 0)  # sanity check
+        assert np.all(all_boxes[:, 2:] > 0)  # no empty box
 
-    # convert from xc, yc, w, h to x1, y1, x2, y2
-    all_boxes[:, :2] = all_boxes[:, :2] - all_boxes[:, 2:] / 2
-    all_boxes[:, 2:] = all_boxes[:, :2] + all_boxes[:, 2:]
+        # convert from xc, yc, w, h to x1, y1, x2, y2
+        all_boxes[:, :2] = all_boxes[:, :2] - all_boxes[:, 2:] / 2
+        all_boxes[:, 2:] = all_boxes[:, :2] + all_boxes[:, 2:]
 
-    im_to_first_box = roi_h5['img_to_first_box'][split_mask]
-    im_to_last_box = roi_h5['img_to_last_box'][split_mask]
-    im_to_first_rel = roi_h5['img_to_first_rel'][split_mask]
-    im_to_last_rel = roi_h5['img_to_last_rel'][split_mask]
+        im_to_first_box = roi_h5['img_to_first_box'][split_mask]
+        im_to_last_box = roi_h5['img_to_last_box'][split_mask]
+        im_to_first_rel = roi_h5['img_to_first_rel'][split_mask]
+        im_to_last_rel = roi_h5['img_to_last_rel'][split_mask]
 
-    # load relation labels
-    _relations = roi_h5['relationships'][:]
-    _relation_predicates = roi_h5['predicates'][:, 0]
-    assert (im_to_first_rel.shape[0] == im_to_last_rel.shape[0])
-    assert (_relations.shape[0] == _relation_predicates.shape[0])  # sanity check
+        # load relation labels
+        _relations = roi_h5['relationships'][:]
+        _relation_predicates = roi_h5['predicates'][:, 0]
+        assert (im_to_first_rel.shape[0] == im_to_last_rel.shape[0])
+        assert (_relations.shape[0] == _relation_predicates.shape[0])  # sanity check
 
     # Get everything by image.
     boxes = []
@@ -588,9 +610,17 @@ def load_graphs(graphs_file, mode='train', num_im=-1, num_val_im=0, filter_empty
                         for rel_ind, tri in enumerate(rels):
                             o1, o2, R = tri
                             tri_str = '{}_{}_{}'.format(gt_classes_i[o1], R, gt_classes_i[o2])
-                            if tri_str not in training_triplets:
+
+                            if isinstance(training_triplets, dict):
+                                assert n_shots > 0, n_shots
+                                if tri_str in training_triplets:
+                                    if (n_shots == 10 and training_triplets[tri_str] >= 1 and training_triplets[tri_str] <= n_shots) \
+                                            or (n_shots == 100 and training_triplets[tri_str] >= 11 and training_triplets[tri_str] <= n_shots):
+                                        ind_zs.append(rel_ind)
+                            elif tri_str not in training_triplets:
+                                assert n_shots == -1, n_shots
                                 ind_zs.append(rel_ind)
-                                # print('%s not in the training set' % tri_str, tri)
+
                         ind_zs = np.array(ind_zs)
 
                     if filter_zeroshots:
@@ -626,8 +656,6 @@ def load_graphs(graphs_file, mode='train', num_im=-1, num_val_im=0, filter_empty
         gt_classes.append(gt_classes_i)
         relationships.append(rels)
 
-    roi_h5.close()
-
     return split_mask, boxes, gt_classes, relationships
 
 
@@ -650,10 +678,10 @@ def load_info(info_file):
     return ind_to_classes, ind_to_predicates
 
 
-def vg_collate(data, num_gpus=3, is_train=False, mode='det', mrcnn=False, is_cuda=False):
+def vg_collate(data, num_gpus=1, is_train=False, mode='det', torch_detector=False, is_cuda=True):
     assert mode in ('det', 'rel')
     blob = Blob(mode=mode, is_train=is_train, num_gpus=num_gpus,
-                batch_size_per_gpu=len(data) // num_gpus, mrcnn=mrcnn, is_cuda=is_cuda)
+                batch_size_per_gpu=len(data) // num_gpus, torch_detector=torch_detector, is_cuda=is_cuda)
     for d in data:
         blob.append(d)
     blob.reduce()
@@ -667,56 +695,58 @@ class VGDataLoader(torch.utils.data.DataLoader):
     """
 
     @classmethod
-    def splits(cls, train_data, val_data_list, batch_size=6, num_workers=0, num_gpus=1, mode='det',
+    def splits(cls,
+               data_dir,
+               backbone='vgg16',
+               batch_size=1,
+               num_workers=0,
+               num_gpus=1,
+               is_cuda=True,
                **kwargs):
-        assert mode in ('det', 'rel')
+
+        mode = 'rel'
+
+        train_data, val_data_dict = VG.splits(data_dir=data_dir,
+                                              torch_detector=backbone != 'vgg16_old',
+                                              **kwargs)
+
         train_load = cls(
             dataset=train_data,
             batch_size=batch_size * num_gpus,
             shuffle=True,
             num_workers=num_workers,
-            collate_fn=lambda x: vg_collate(x, mode=mode, num_gpus=num_gpus, is_train=True, mrcnn=train_data.mrcnn),
-            drop_last=True,
-            # pin_memory=True,
-            **kwargs,
+            collate_fn=lambda x: vg_collate(x, mode=mode, num_gpus=num_gpus, is_train=True,
+                                            torch_detector=train_data.torch_detector, is_cuda=is_cuda),
+            drop_last=True
         )
 
-        val_loaders = []
-        for val_data in val_data_list:
+        val_loaders = {}
+        for name, val_data in val_data_dict.items():
             if val_data is None:
-                val_loaders.append(None)
+                val_load = None
             else:
                 val_load = cls(
                     dataset=val_data,
                     batch_size=batch_size * num_gpus if mode=='det' else num_gpus,
                     shuffle=False,
                     num_workers=num_workers,
-                    collate_fn=lambda x: vg_collate(x, mode=mode, num_gpus=num_gpus, is_train=False, mrcnn=val_data.mrcnn),
-                    drop_last=False,
-                    # pin_memory=True,
-                    **kwargs,
+                    collate_fn=lambda x: vg_collate(x, mode=mode, num_gpus=num_gpus, is_train=False,
+                                                    torch_detector=val_data.torch_detector, is_cuda=is_cuda),
+                    drop_last=False
                 )
-                val_loaders.append(val_load)
+            val_loaders[name] = val_load
 
         return train_load, val_loaders
 
 
 
-def filter_dups(gt_rels):
-    old_size = gt_rels.shape[0]
+def filter_dups(gt_rels, random_edge=True):
     all_rel_sets = defaultdict(list)
     for (o0, o1, r) in gt_rels:
         all_rel_sets[(o0, o1)].append(r)
 
-    # To allow multirelations, but filter dups
-    # gt_rels = []
-    # for k, v in all_rel_sets.items():
-    #     all_rel_sets[k] = np.unique(all_rel_sets[k])
-    #     for r in all_rel_sets[k]:
-    #         gt_rels.append((k[0], k[1], r))
+    gt_rels = [(k[0], k[1], np.random.choice(v) if random_edge else v[0]) for k, v in all_rel_sets.items()]
 
-    gt_rels = [(k[0], k[1], np.random.choice(v)) for k, v in all_rel_sets.items()]
+    return np.array(gt_rels)
 
-    gt_rels = np.array(gt_rels)
-    return gt_rels
 

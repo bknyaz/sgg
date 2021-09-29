@@ -1,4 +1,7 @@
-# http://pytorch.org/tutorials/intermediate/torchvision_tutorial.html
+"""
+Optional step of pretrained the detector.
+Based on http://pytorch.org/tutorials/intermediate/torchvision_tutorial.html.
+"""
 
 import os
 import sys
@@ -20,10 +23,12 @@ data_dir = sys.argv[2]
 save_dir = sys.argv[3]
 checkpoint_name = '%s_maskrcnn_res50fpn.pth' % VG.split
 
+
 if not os.path.exists(save_dir):
     if len(save_dir) == 0:
         raise ValueError("save_dir must be a valid path")
     os.mkdir(save_dir)
+
 
 class VGLoader(VG):
     def __init__(self, mode, data_dir, transforms):
@@ -150,7 +155,7 @@ def main():
 
         try:
             print("\nCheckpointing to %s" % os.path.join(save_dir, checkpoint_name))
-            save_checkpoint(model, optimizer, save_dir, checkpoint_name, {'epoch': epoch})
+            save_checkpoint(model, optimizer, os.path.join(save_dir, checkpoint_name), {'epoch': epoch})
             print('done!\n')
         except Exception as e:
             print('error saving checkpoint', e)
