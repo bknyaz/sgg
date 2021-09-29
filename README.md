@@ -35,7 +35,7 @@ Results in our papers [1,2] were obtained on a single GPU 1080Ti/2080Ti/RTX6000 
 
 To use the edge feature model from Rowan Zellers' model implementations (default argument `-edge_model motifs` in our code), it is necessary to build the following function:
 
-`cd lib/draw_rectangles; python setup.py build_ext --inplace; cd ..`
+`cd lib/draw_rectangles; python setup.py build_ext --inplace; cd ../..;`
 
 
 # Data
