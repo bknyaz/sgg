@@ -76,7 +76,7 @@ class SceneGraphPerturb():
             candidates = torch.argsort(self.obj_pairwise[cls])[-self.topk:]
             cls_new = random_choice(candidates)
 
-        elif self.method == 'structn':
+        elif self.method == 'graphn':
             all_candidates = {}
             for (_, o1, o2, R) in gt_rels:  # person_on_surfboard, wave_near_person
                 assert ind in [o1, o2], (ind, o1, o2, R)
@@ -139,7 +139,7 @@ class SceneGraphPerturb():
         else:
             raise NotImplementedError(self.method)
 
-        if not (self.method == 'structn' and self.topk == 0):
+        if not (self.method == 'graphn' and self.topk == 0):
             assert cls_new not in [0, cls], (cls_new, cls)
 
         return cls_new

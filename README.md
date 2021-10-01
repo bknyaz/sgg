@@ -65,7 +65,99 @@ To train our GAN models from [2], it is necessary to first extract and save real
 
 The script will generate `./data/VG/features.hdf5` of around 30GB.
 
+# Example from [1]: Improved edge loss
 
+Our improved edge loss from [1] can be added to any SGG model that predicts edge labels `rel_dists`, which is a float valued tensor of shape `(M,R)`, where `R` is the total number of predicate classes (e.g. 51 in Visual Genome). `M` is the total number of edges in a batch of scene graphs, including the background edges (edges without any semantic relationships).
+
+The baseline loss used in most SGG works simply computes the cross-entropy between `rel_dists` and ground truth edge labels `rel_labels` (an integer tensor of length `M`):
+
+```
+baseline_edge_loss = torch.nn.functional.cross_entropy(rel_dists, rel_labels)
+```
+
+Our improved edge loss takes into account the extreme imbalance between the foreground and background edge terms. Foreground edges are those that have semantic ground truth annotations (e.g. `on`, `has`, `wearing`, etc.). In datasets like Visual Genome, scene graph annotations are extremely sparse, i.e. the number of foreground edges (`M_FG`) is significantly lower than the total number of edges `M`.
+
+```    
+baseline_edge_loss = torch.nn.functional.cross_entropy(rel_dists, rel_labels)
+M = len(rel_labels)
+M_FG = torch.sum(rel_labels > 0)
+our_edge_loss = baseline_edge_loss * M / M_FG
+```
+
+Our improved loss significantly improves all SGG metrics, in particular zero and few shots. See [1] for the results and discussion why our loss works well. 
+
+See the full code of different losses in [lib/losses.py](lib/losses.py).
+
+# Example from [2]: Generative Adversarial Networks (GANs)
+
+In this example I provide the pseudo code for adding the GAN model to a given SGG model. See the full code in [main.py](main.py).
+
+```
+from torch.nn.functional import cross_entropy as CE
+
+# Assume the SGG model (sgg_model) returns features for 
+# nodes (nodes_real) and edges (edges_real) as well as global features (fmap_real).
+
+# 1. Main SGG model object and relationship classification losses (L_CLS)
+
+obj_dists, rel_dists = sgg_model.predict(nodes_real, edges_real)  # predict node and edge labels
+node_loss = CE(obj_dists, gt_objects)
+M = len(rel_labels)
+M_FG = torch.sum(rel_labels > 0)
+our_edge_loss = CE(rel_dists, rel_labels) *  M / M_FG  # use our improved edge loss from [1]
+
+L_CLS = node_loss + our_edge_loss  # SGG total loss from [1]
+L_CLS.backward()
+F_optimizer.step()  # update the sgg_model (main SGG model F)
+
+# 2. GAN-based updates
+
+# Scene Graph perturbations (optional)
+gt_objects_fake = sgp.perturb(gt_objects, gt_rels)  # we only perturb nodes (object labels)
+
+# Generate global feature maps using our GAN conditioned on (perturbed) scene graphs
+fmap_fake = gan(gt_objects_fake, gt_boxes, gt_rels)
+
+# Extract node and edge features from fmap_fake
+nodes_fake, edges_fake = sgg_model.node_edge_features(fmap_fake)
+
+# Make SGG predictions for the node and edge features 
+# Detach the gradients to avoid bad collaboration of G and F
+obj_dists_fake, rel_dists_fake = sgg_model.predict(nodes_fake.detach(),
+                                                   edges_fake.detach())
+
+# 2.1. Generator (G) losses
+
+# Adversarial losses
+L_ADV_G_nodes = gan.loss(nodes_fake, labels_fake=gt_objects_fake)
+L_ADV_G_edges = gan.loss(edges_fake, labels_fake=rel_labels)
+L_ADV_G_global = gan.loss(fmap_fake)
+
+# Reconstruction losses
+L_REC_nodes = CE(obj_dists_fake, gt_objects_fake)
+L_REC_edges = CE(rel_dists_fake, rel_labels) *  M / M_FG  # use our improved edge loss from [1]
+
+# Total G loss
+loss_G_F = L_ADV_G_nodes + L_ADV_G_edges + L_ADV_G_global + L_REC_nodes + L_REC_edges
+loss_G_F.backward()
+F_optimizer.step()  # update the sgg_model (main SGG model F)
+G_optimizer.step()  # update the generator (G) of the GAN
+
+# 2.1. Discriminator (D) losses
+
+# Adversarial losses
+L_ADV_D_nodes = gan.loss(node_real, nodes_fake, labels_fake=gt_objects_fake, labels_real=gt_objects)
+L_ADV_D_edges = gan.loss(edge_real, edges_fake, labels_fake=rel_labels, labels_real=rel_labels)
+L_ADV_D_global = gan.loss(fmap_real, fmap_fake)
+
+# Total D loss
+loss_D = L_ADV_D_nodes + L_ADV_D_edges + L_ADV_D_global
+loss_D.backward()  # update the discriminator (D) of the GAN
+D_optimizer.step()
+
+```
+
+Adding our GAN also consistently improves all SGG metrics. See [2] for the results, model description and analysis.
 
 # Visual Genome (VG)
 
@@ -81,12 +173,12 @@ Below are the commands to train different SGG models from our papers:
 
 - IMP++ with GAN from [our ICCV 2021](https://arxiv.org/abs/2007.05756): `python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_GAN -loss dnorm -b 24 -gan -largeD -vis_cond ./data/VG/features.hdf5`
 
-- IMP++ with GAN and StructN scene graph perturbations (`a=2`) from [our ICCV 2021](https://arxiv.org/abs/2007.05756): `python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_GAN_structn -loss dnorm -b 24 -gan -largeD -vis_cond ./data/VG/features.hdf5 -perturb structn -L 0.2 -topk 5 -structn_a 2`
+- IMP++ with GAN and GraphN scene graph perturbations (`a=2`) from [our ICCV 2021](https://arxiv.org/abs/2007.05756): `python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_GAN_graphn -loss dnorm -b 24 -gan -largeD -vis_cond ./data/VG/features.hdf5 -perturb graphn -L 0.2 -topk 5 -graphn_a 2` 
 
 
 Checkpoints will be saved locally in `-save_dir`.
 
-Evaluation on the VG test set will be run at the end of the training script. To re-run evaluation: `python main.py -data ./data -ckpt ./results/IMP_GAN_structn/vgrel.pth -pred_weight $x`, where `$x` is the weight for rare predicate classes, which is 1 for default, but can be increased to improve certain metrics like mean recall (see the Appendix in our paper [2] for more details).
+Evaluation on the VG test set will be run at the end of the training script. To re-run evaluation: `python main.py -data ./data -ckpt ./results/IMP_GAN_graphn/vgrel.pth -pred_weight $x`, where `$x` is the weight for rare predicate classes, which is 1 for default, but can be increased to improve certain metrics like mean recall (see the Appendix in our paper [2] for more details).
 
 ## Generated Feature Quality
 

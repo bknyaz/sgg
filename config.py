@@ -226,14 +226,14 @@ class ModelConfig(object):
         parser.add_argument('-beta2', dest='beta2', type=float, default=0.9, help='Adam hyperparameter for GAN, good values for GANs are 0.9 and 0.999')
 
         # Perturbation args
-        parser.add_argument('-perturb', dest='perturb', type=str, default=None, choices=['rand', 'neigh', 'structn'],
+        parser.add_argument('-perturb', dest='perturb', type=str, default=None, choices=['rand', 'neigh', 'graphn'],
                             help='perturbation method, None denotes no perturbations')
         parser.add_argument('-L', dest='L', type=float, default=0.2,
                             help='perturbation intensity, 0 denotes no perturbations')
         parser.add_argument('-topk', dest='topk', type=int, default=5,
                             help='number of semantic neighbors to sample from')
-        parser.add_argument('-structn_a', dest='structn_a', type=int, default=2,
-                            help='alpha parameter of StructN controlling rare vs frequent compositions')
+        parser.add_argument('-graphn_a', dest='graphn_a', type=int, default=2,
+                            help='alpha parameter of GraphN controlling rare vs frequent compositions')
         parser.add_argument('-uniform', dest='uniform', action='store_true', help='sample nodes uniformly instead of by node degree')
         parser.add_argument('-degree_smoothing', dest='degree_smoothing', type=float, default=1.0, help='flatten the degree distribution '
                                                                                                         '(ignored if uniform=True)')

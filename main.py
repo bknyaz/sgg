@@ -12,9 +12,9 @@ Generative Compositional Augmentations for Scene Graph Prediction. ICCV 2021. ht
 A large portion of this repo is based on https://github.com/rowanz/neural-motifs (MIT License).
 For the paper [2], some GAN layers are based on https://github.com/google/sg2im (Apache-2.0 License).
 
-Example to train IMP++ with GAN and StructN scene graph perturbations:
+Example to train IMP++ with GAN and GraphN scene graph perturbations:
 
-    python main.py -ckpt ./data/VG/vg-faster-rcnn.tar -gan -largeD -loss dnorm -perturb structn -vis_cond ./data/VG/features.hdf5
+    python main.py -ckpt ./data/VG/vg-faster-rcnn.tar -gan -largeD -loss dnorm -perturb graphn -vis_cond ./data/VG/features.hdf5
 
 """
 
@@ -87,7 +87,7 @@ if conf.gan:
                                                      train_loader.dataset.pred_obj_pairs),
                                 obj_classes=train_loader.dataset.ind_to_classes,
                                 triplet2str=train_loader.dataset.triplet2str,
-                                L=conf.L, topk=conf.topk, alpha=conf.structn_a,
+                                L=conf.L, topk=conf.topk, alpha=conf.graphn_a,
                                 uniform=conf.uniform, degree_smoothing=conf.degree_smoothing)
 
     if conf.wandb_log:
