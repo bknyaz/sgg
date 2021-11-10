@@ -16,8 +16,17 @@ This repository accompanies two papers:
 
 See the code for my another ICCV 2021 paper [Context-aware Scene Graph Generation with Seq2Seq Transformers](http://www.cs.utoronto.ca/~mvolkovs/ICCV2021_Transformer_SGG.pdf) at https://github.com/layer6ai-labs/SGG-Seq2Seq.
 
-
 The code in this repo is based on the amazing [code for Neural Motifs by Rowan Zellers](https://github.com/rowanz/neural-motifs). Our code uses `torchvision.models.detection`, so can be run in PyTorch 1.2 or later.
+
+# Weights and Biases
+
+Weights and Biases is a cool tool to track your machine learning experiments that I used in this project.
+It is free (in most cases) and very user-friendly, which is very helpful for complex projects with lots of metrics (like SGG).
+
+See our [Weights and Biases (W & B) project](https://wandb.ai/bknyaz/iccv2021gan) for the results on different SGG metrics and training curves.
+
+<figure> <img src="figs/wb.jpeg" height="500"></figure>
+
 
 # Requirements
 
