@@ -176,10 +176,10 @@ Results of R@100 are reported below obtained using Faster R-CNN with VGG16 as a 
 
 | Model | Paper | Checkpoint | W & B | Zero-Shots | 10-shots | 100-shots | All-shots |
 |:-----|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|
-| IMP+<sup>1</sup> | [IMP](https://arxiv.org/abs/1701.02426) / [Neural Motifs](https://arxiv.org/abs/1711.06640) | [link](https://drive.google.com/file/d/1uOdmqWnYuIy46ifdPNerlchmwR4p7MiJ/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/qe3j8zv2/overview?workspace) | 8.7 | 19.2 | 38.4 | 47.8 |
-| IMP++<sup>2</sup> | [our BMVC 2020](https://arxiv.org/abs/2005.08230) | [link](https://drive.google.com/file/d/1EkxJjl3vu173HyTynIJICIVDPffEiDPB/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/tpu14q4s/overview?workspace) | 8.8 | 21.6 | 40.6 | 48.7 |
-| IMP++ with GAN<sup>3</sup> | [our ICCV 2021](https://arxiv.org/abs/2007.05756) |[link](https://drive.google.com/file/d/1CzQbtUyxht3YqrwIEUfSNDrnCj8ZFzkr/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/x5arn1m9/overview?workspace) | 9.3 | 22.2 | 41.5 | 50.0 | 
-| IMP++ with GAN and GraphN scene graph perturbations<sup>4</sup> | [our ICCV 2021](https://arxiv.org/abs/2007.05756) | [link](https://drive.google.com/file/d/1hhoppU5cGowCc1G8kw_A2uMfsPZp6o-I/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/3xth1l5y/overview?workspace) | 10.2 | 21.7 | 40.9 | 49.8 |
+| IMP+<sup>1</sup> | [IMP](https://arxiv.org/abs/1701.02426) / [Neural Motifs](https://arxiv.org/abs/1711.06640) | [link](https://drive.google.com/file/d/17i3t7HljSxskOgrtJCEogjWOnzqdyZjE/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/qe3j8zv2/overview?workspace) | 8.7 | 19.2 | 38.4 | 47.8 |
+| IMP++<sup>2</sup> | [our BMVC 2020](https://arxiv.org/abs/2005.08230) | [link](https://drive.google.com/file/d/15r0_e5me7OG7GZgJ4GwyqST17qe6krdB/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/tpu14q4s/overview?workspace) | 8.8 | 21.6 | 40.6 | 48.7 |
+| IMP++ with GAN<sup>3</sup> | [our ICCV 2021](https://arxiv.org/abs/2007.05756) |[link](https://drive.google.com/file/d/1Ja236GoSSQpBXfxSwmB54H5kLhI8BM3T/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/x5arn1m9/overview?workspace) | 9.3 | 22.2 | 41.5 | 50.0 | 
+| IMP++ with GAN and GraphN scene graph perturbations<sup>4</sup> | [our ICCV 2021](https://arxiv.org/abs/2007.05756) | [link](https://drive.google.com/file/d/1isr_0IS-KeNMkG8MW_HV9IgWigxxCCG0/view?usp=sharing) | [link](https://wandb.ai/bknyaz/iccv2021gan/runs/3xth1l5y/overview?workspace) | 10.2 | 21.7 | 40.9 | 49.8 |
 
 - <sup>1</sup>:
 `python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_baseline -loss baseline -b 24`
@@ -191,11 +191,11 @@ Results of R@100 are reported below obtained using Faster R-CNN with VGG16 as a 
 
 - <sup>4</sup>:`python main.py -data ./data -ckpt ./data/vg-faster-rcnn.tar -save_dir ./results/IMP_GAN_graphn -loss dnorm -b 24 -gan -largeD -vis_cond ./data/VG/features.hdf5 -perturb graphn -L 0.2 -topk 5 -graphn_a 2`
 
-    - `-graphn_a 5`: [checkpoint](https://drive.google.com/file/d/1jfpzKUlOk2sAgL6cgeaf0oc5pJQAQjTz/view?usp=sharing), [W & B project](https://wandb.ai/bknyaz/iccv2021gan/runs/84m3254k/overview?workspace) 
+    - `-graphn_a 5`: [checkpoint](https://drive.google.com/file/d/1vbnYG_xryxZL8uEgfQ0iJUNyZUHgfNhb/view?usp=sharing), [W & B project](https://wandb.ai/bknyaz/iccv2021gan/runs/84m3254k/overview?workspace) 
 
-    - `-graphn_a 10`: [checkpoint](https://drive.google.com/file/d/12FZYnfxOymcKj9iTJfFuge39kZ0Q4vq2/view?usp=sharing), [W & B project](https://wandb.ai/bknyaz/iccv2021gan/runs/vu4xulfs/overview?workspace)
+    - `-graphn_a 10`: [checkpoint](https://drive.google.com/file/d/1YlAmZbM1XhKVI84DnV4VYVIDdYhEf94t/view?usp=sharing), [W & B project](https://wandb.ai/bknyaz/iccv2021gan/runs/vu4xulfs/overview?workspace)
  
-    - `-graphn_a 20`: [checkpoint](https://drive.google.com/file/d/1aFcwTjeXWYzyFV_lbsC86wJaaPjuEfgj/view?usp=sharing), [W & B project](https://wandb.ai/bknyaz/iccv2021gan/runs/vm5fpioc/overview?workspace) 
+    - `-graphn_a 20`: [checkpoint](https://drive.google.com/file/d/1pGmJc-aGl5br0ZTQzFF2M0cldA7Icw1N/view?usp=sharing), [W & B project](https://wandb.ai/bknyaz/iccv2021gan/runs/vm5fpioc/overview?workspace) 
 
 
 Evaluation on the VG test set will be run at the end of the training script. To re-run evaluation: `python main.py -data ./data -ckpt ./results/IMP_GAN_graphn/vgrel.pth -pred_weight $x`, where `$x` is the weight for rare predicate classes, which is 1 for default, but can be increased to improve certain metrics like mean recall (see the Appendix in our paper [2] for more details).
